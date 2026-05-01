@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#C4622D"/>
+      <stop offset="55%" stop-color="#B5532A"/>
+      <stop offset="100%" stop-color="#8B4513"/>
+    </linearGradient>
+    <radialGradient id="sun" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#E0B25A"/>
+      <stop offset="100%" stop-color="#C9973A"/>
+    </radialGradient>
+    <pattern id="dots" width="20" height="20" patternUnits="userSpaceOnUse">
+      <circle cx="10" cy="10" r="0.8" fill="#FAF3E0" opacity="0.18"/>
+    </pattern>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <rect width="512" height="512" fill="url(#dots)"/>
+
+  <!-- Outer Warli-inspired border -->
+  <g fill="none" stroke="#C9973A" stroke-width="3" opacity="0.7">
+    <rect x="32" y="32" width="448" height="448" rx="48"/>
+    <rect x="44" y="44" width="424" height="424" rx="40" stroke-dasharray="2 8"/>
+  </g>
+
+  <!-- Sun + rays (Warli motif) -->
+  <g transform="translate(256 130)">
+    <circle r="36" fill="url(#sun)" stroke="#FAF3E0" stroke-width="3"/>
+    <g stroke="#FAF3E0" stroke-width="4" stroke-linecap="round">
+      <line x1="0" y1="-58" x2="0" y2="-72"/>
+      <line x1="0" y1="58" x2="0" y2="72"/>
+      <line x1="-58" y1="0" x2="-72" y2="0"/>
+      <line x1="58" y1="0" x2="72" y2="0"/>
+      <line x1="-41" y1="-41" x2="-51" y2="-51"/>
+      <line x1="41" y1="-41" x2="51" y2="-51"/>
+      <line x1="-41" y1="41" x2="-51" y2="51"/>
+      <line x1="41" y1="41" x2="51" y2="51"/>
+    </g>
+  </g>
+
+  <!-- Open book (centerpiece) -->
+  <g transform="translate(256 320)">
+    <!-- Book pages -->
+    <path d="M -150 -10 L 0 -40 L 150 -10 L 150 90 L 0 60 L -150 90 Z"
+          fill="#F5EDD6" stroke="#C9973A" stroke-width="3" stroke-linejoin="round"/>
+    <!-- Spine -->
+    <line x1="0" y1="-40" x2="0" y2="60" stroke="#8B4513" stroke-width="3"/>
+    <!-- Text lines (left page) -->
+    <g stroke="#2A1810" stroke-width="2.5" stroke-linecap="round" opacity="0.85">
+      <line x1="-118" y1="10" x2="-22" y2="-2"/>
+      <line x1="-118" y1="28" x2="-22" y2="16"/>
+      <line x1="-118" y1="46" x2="-22" y2="34"/>
+      <line x1="-118" y1="64" x2="-50" y2="56"/>
+    </g>
+    <!-- Text lines (right page) -->
+    <g stroke="#2A1810" stroke-width="2.5" stroke-linecap="round" opacity="0.85">
+      <line x1="22" y1="-2" x2="118" y2="10"/>
+      <line x1="22" y1="16" x2="118" y2="28"/>
+      <line x1="22" y1="34" x2="118" y2="46"/>
+      <line x1="50" y1="56" x2="118" y2="64"/>
+    </g>
+  </g>
+
+  <!-- Warli figure (tribal silhouette, top-left) -->
+  <g transform="translate(102 200)" stroke="#FAF3E0" stroke-width="3.5" fill="none" stroke-linecap="round">
+    <circle cx="0" cy="0" r="6" fill="#FAF3E0"/>
+    <line x1="0" y1="6" x2="0" y2="22"/>
+    <line x1="-10" y1="14" x2="10" y2="14"/>
+    <line x1="0" y1="22" x2="-8" y2="34"/>
+    <line x1="0" y1="22" x2="8" y2="34"/>
+  </g>
+  <g transform="translate(410 200)" stroke="#FAF3E0" stroke-width="3.5" fill="none" stroke-linecap="round">
+    <circle cx="0" cy="0" r="6" fill="#FAF3E0"/>
+    <line x1="0" y1="6" x2="0" y2="22"/>
+    <line x1="-10" y1="14" x2="10" y2="14"/>
+    <line x1="0" y1="22" x2="-8" y2="34"/>
+    <line x1="0" y1="22" x2="8" y2="34"/>
+  </g>
+
+  <!-- Tribal triangle pattern bottom -->
+  <g fill="#C9973A" opacity="0.85">
+    <polygon points="80,460 96,440 112,460"/>
+    <polygon points="120,460 136,440 152,460"/>
+    <polygon points="160,460 176,440 192,460"/>
+    <polygon points="200,460 216,440 232,460"/>
+    <polygon points="240,460 256,440 272,460"/>
+    <polygon points="280,460 296,440 312,460"/>
+    <polygon points="320,460 336,440 352,460"/>
+    <polygon points="360,460 376,440 392,460"/>
+    <polygon points="400,460 416,440 432,460"/>
+  </g>
+</svg>

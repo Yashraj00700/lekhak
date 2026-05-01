@@ -1,0 +1,62 @@
+import { Suspense, lazy, useEffect } from 'react';
+import { Routes, Route, useLocation } from 'react-router-dom';
+import { AnimatePresence } from 'framer-motion';
+import BottomNav from './components/BottomNav.jsx';
+
+const Home = lazy(() => import('./routes/Home.jsx'));
+const BookEditor = lazy(() => import('./routes/BookEditor.jsx'));
+const ImageStudio = lazy(() => import('./routes/ImageStudio.jsx'));
+const Characters = lazy(() => import('./routes/Characters.jsx'));
+const Glossary = lazy(() => import('./routes/Glossary.jsx'));
+const ExportPage = lazy(() => import('./routes/Export.jsx'));
+const SettingsPage = lazy(() => import('./routes/Settings.jsx'));
+
+function Loading() {
+  return (
+    <div className="flex items-center justify-center py-24">
+      <div className="lekhak-card-paper px-6 py-4 text-[var(--color-ink-soft)]">
+        क्षणभर थांबा…
+      </div>
+    </div>
+  );
+}
+
+function ScrollReset() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [pathname]);
+  return null;
+}
+
+export default function App() {
+  const location = useLocation();
+  return (
+    <div className="min-h-[100dvh] flex flex-col">
+      <ScrollReset />
+      <main
+        className="flex-1 pb-[88px]"
+        style={{ paddingTop: 'env(safe-area-inset-top)' }}
+      >
+        <Suspense fallback={<Loading />}>
+          <AnimatePresence mode="wait">
+            <Routes location={location} key={location.pathname}>
+              <Route path="/" element={<Home />} />
+              <Route path="/book/:bookId" element={<BookEditor />} />
+              <Route path="/book/:bookId/images" element={<ImageStudio />} />
+              <Route path="/book/:bookId/characters" element={<Characters />} />
+              <Route path="/book/:bookId/glossary" element={<Glossary />} />
+              <Route path="/book/:bookId/export" element={<ExportPage />} />
+              <Route path="/images" element={<ImageStudio />} />
+              <Route path="/characters" element={<Characters />} />
+              <Route path="/glossary" element={<Glossary />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="*" element={<Home />} />
+            </Routes>
+          </AnimatePresence>
+        </Suspense>
+      </main>
+      <BottomNav />
+    </div>
+  );
+}

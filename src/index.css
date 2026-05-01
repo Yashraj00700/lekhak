@@ -1,0 +1,296 @@
+@import "tailwindcss";
+
+/* ========================================================================
+   लेखक — Design tokens (Tailwind v4 CSS-first config)
+   ======================================================================== */
+@theme {
+  /* Earthy palette */
+  --color-terracotta: #c4622d;
+  --color-terracotta-light: #d97a45;
+  --color-terracotta-dark: #a04a1f;
+  --color-parchment: #f5edd6;
+  --color-parchment-dark: #e8dcb8;
+  --color-forest: #2d5016;
+  --color-forest-light: #4a7028;
+  --color-gold: #c9973a;
+  --color-gold-light: #e0b25a;
+  --color-gold-dark: #a87a25;
+  --color-ink: #2a1810;
+  --color-ink-soft: #4a3528;
+  --color-cream: #faf3e0;
+  --color-cream-warm: #f8edd0;
+  --color-clay: #8b4513;
+  --color-rust: #a0421a;
+  --color-saffron: #e89c2c;
+  --color-indigo-tribal: #2c4870;
+
+  /* Font families */
+  --font-tiro: 'Tiro Devanagari Marathi', 'Noto Serif Devanagari', serif;
+  --font-noto: 'Noto Sans Devanagari', system-ui, sans-serif;
+  --font-noto-serif: 'Noto Serif Devanagari', 'Tiro Devanagari Marathi', serif;
+
+  /* Shadows — warm, earthy */
+  --shadow-warm: 0 4px 20px rgba(139, 69, 19, 0.18);
+  --shadow-warm-lg: 0 10px 40px rgba(139, 69, 19, 0.22);
+  --shadow-soft: 0 2px 8px rgba(42, 24, 16, 0.08);
+  --shadow-inset-paper: inset 0 0 60px rgba(196, 98, 45, 0.04);
+
+  /* Animation easing */
+  --ease-warm: cubic-bezier(0.32, 0.72, 0.32, 1);
+
+  /* Radii — slightly hand-drawn feel */
+  --radius-card: 14px;
+  --radius-soft: 10px;
+  --radius-pill: 999px;
+}
+
+/* ========================================================================
+   Base styles
+   ======================================================================== */
+:root {
+  font-family: var(--font-noto);
+  font-size: 18px;
+  line-height: 1.6;
+  color: var(--color-ink);
+  background: var(--color-parchment);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: 'kern' 1, 'liga' 1;
+
+  /* iOS safe areas */
+  --safe-top: env(safe-area-inset-top);
+  --safe-bottom: env(safe-area-inset-bottom);
+}
+
+* {
+  -webkit-tap-highlight-color: rgba(196, 98, 45, 0.15);
+}
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+body {
+  background: var(--color-parchment);
+  background-image:
+    /* paper grain - layered noise via SVG fragments and warm radial */
+    radial-gradient(ellipse 80% 60% at 30% 20%, rgba(196, 98, 45, 0.05) 0%, transparent 50%),
+    radial-gradient(ellipse 70% 50% at 80% 80%, rgba(201, 151, 58, 0.06) 0%, transparent 50%),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.7 0 0 0 0 0.5 0 0 0 0 0.2 0 0 0 0.06 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  background-attachment: fixed;
+  background-size: auto, auto, 220px 220px;
+}
+
+#root {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* ========================================================================
+   Typography helpers — large for elderly readers
+   ======================================================================== */
+h1, h2, h3, h4 {
+  font-family: var(--font-tiro);
+  color: var(--color-ink);
+  letter-spacing: 0.01em;
+  font-weight: 400;
+}
+
+h1 { font-size: clamp(2rem, 5vw, 2.75rem); line-height: 1.2; }
+h2 { font-size: clamp(1.5rem, 4vw, 2rem); line-height: 1.25; }
+h3 { font-size: clamp(1.25rem, 3vw, 1.5rem); line-height: 1.3; }
+
+p, li, label, button, input, textarea, select {
+  font-family: var(--font-noto);
+}
+
+/* ========================================================================
+   Editor — large, comfortable Marathi reading
+   ======================================================================== */
+.lekhak-editor {
+  font-family: var(--font-noto-serif);
+  font-size: 1.375rem;
+  line-height: 1.85;
+  letter-spacing: 0.005em;
+  color: var(--color-ink);
+}
+
+.lekhak-editor::placeholder {
+  color: rgba(74, 53, 40, 0.4);
+  font-style: italic;
+}
+
+/* ========================================================================
+   Hand-drawn card (no harsh whites, no AI gradients)
+   ======================================================================== */
+.lekhak-card {
+  background: var(--color-cream);
+  border: 1px solid rgba(201, 151, 58, 0.4);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-warm), var(--shadow-inset-paper);
+  position: relative;
+}
+
+.lekhak-card-paper {
+  background: var(--color-cream-warm);
+  background-image:
+    radial-gradient(circle at 15% 20%, rgba(196, 98, 45, 0.04) 0%, transparent 30%),
+    radial-gradient(circle at 85% 80%, rgba(201, 151, 58, 0.05) 0%, transparent 30%);
+  border: 1px solid rgba(201, 151, 58, 0.3);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-warm);
+}
+
+/* Tribal divider patterns */
+.tribal-divider-warli {
+  height: 24px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 80 24' width='80' height='24'><g fill='none' stroke='%23C9973A' stroke-width='1.4' stroke-linecap='round'><path d='M4 12 L12 4 L20 12 L12 20 Z'/><path d='M28 12 L36 4 L44 12 L36 20 Z'/><path d='M52 12 L60 4 L68 12 L60 20 Z'/><circle cx='12' cy='12' r='1.5' fill='%23C4622D'/><circle cx='36' cy='12' r='1.5' fill='%23C4622D'/><circle cx='60' cy='12' r='1.5' fill='%23C4622D'/></g></svg>");
+  background-repeat: repeat-x;
+  background-position: center;
+  opacity: 0.7;
+}
+
+/* ========================================================================
+   Buttons — 48px touch targets minimum
+   ======================================================================== */
+.btn {
+  min-height: 48px;
+  padding: 0 1.25rem;
+  border-radius: var(--radius-soft);
+  font-family: var(--font-noto);
+  font-weight: 600;
+  font-size: 1.0625rem;
+  letter-spacing: 0.01em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition: transform 160ms var(--ease-warm), box-shadow 200ms var(--ease-warm), background 180ms var(--ease-warm);
+  cursor: pointer;
+  border: 1px solid transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  white-space: nowrap;
+}
+.btn:active { transform: translateY(1px); }
+.btn:focus-visible {
+  outline: 2px solid var(--color-gold);
+  outline-offset: 3px;
+}
+.btn-primary {
+  background: var(--color-terracotta);
+  color: var(--color-cream);
+  box-shadow: 0 3px 0 var(--color-terracotta-dark), 0 6px 18px rgba(196, 98, 45, 0.35);
+}
+.btn-primary:hover { background: var(--color-terracotta-light); }
+.btn-secondary {
+  background: var(--color-forest);
+  color: var(--color-cream);
+  box-shadow: 0 3px 0 #1a2f0c, 0 6px 16px rgba(45, 80, 22, 0.3);
+}
+.btn-secondary:hover { background: var(--color-forest-light); }
+.btn-ghost {
+  background: transparent;
+  color: var(--color-ink);
+  border: 1.5px solid var(--color-gold);
+}
+.btn-ghost:hover { background: rgba(201, 151, 58, 0.12); }
+.btn-icon {
+  min-height: 48px;
+  min-width: 48px;
+  padding: 0;
+}
+
+/* ========================================================================
+   Input — parchment with gold focus
+   ======================================================================== */
+.input, .textarea {
+  width: 100%;
+  background: var(--color-cream-warm);
+  border: 1.5px solid rgba(201, 151, 58, 0.45);
+  border-radius: var(--radius-soft);
+  padding: 0.875rem 1rem;
+  font-family: var(--font-noto);
+  font-size: 1.125rem;
+  color: var(--color-ink);
+  transition: border-color 160ms var(--ease-warm), box-shadow 160ms var(--ease-warm);
+}
+.input:focus, .textarea:focus {
+  outline: none;
+  border-color: var(--color-gold);
+  box-shadow: 0 0 0 3px rgba(201, 151, 58, 0.18);
+}
+
+/* ========================================================================
+   Bottom nav — 5 tabs, 60px tall, safe-area aware
+   ======================================================================== */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: linear-gradient(180deg, rgba(250, 243, 224, 0.95), rgba(245, 237, 214, 0.98));
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid rgba(201, 151, 58, 0.35);
+  padding: 6px 0 calc(6px + var(--safe-bottom));
+  box-shadow: 0 -4px 20px rgba(139, 69, 19, 0.12);
+}
+
+/* ========================================================================
+   Animations
+   ======================================================================== */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(201, 151, 58, 0.1) 0%,
+    rgba(201, 151, 58, 0.3) 50%,
+    rgba(201, 151, 58, 0.1) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s infinite linear;
+}
+
+@keyframes pulse-gold {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(201, 151, 58, 0.6); }
+  50% { box-shadow: 0 0 0 8px rgba(201, 151, 58, 0); }
+}
+.pulse-gold { animation: pulse-gold 1.6s infinite; }
+
+/* ========================================================================
+   Utilities
+   ======================================================================== */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+.text-balance { text-wrap: balance; }
+
+/* Block iOS zoom on input */
+@supports (-webkit-touch-callout: none) {
+  .input, .textarea { font-size: 16px; }
+  .lekhak-editor { font-size: 1.25rem; }
+}
+
+/* Selection */
+::selection {
+  background: rgba(201, 151, 58, 0.45);
+  color: var(--color-ink);
+}
+
+/* Reduce motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
