@@ -1,7 +1,7 @@
 import { openDB } from 'idb';
 
 const DB_NAME = 'lekhak';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // v2: adds wordStats store + theme/font settings
 
 /**
  * Schema (all stores keyed by string id)
@@ -42,6 +42,13 @@ export function getDB() {
         }
         if (!db.objectStoreNames.contains('settings')) {
           db.createObjectStore('settings', { keyPath: 'id' });
+        }
+        // v2: word stats for daily goal + streak
+        if (!db.objectStoreNames.contains('wordStats')) {
+          const ws = db.createObjectStore('wordStats', { keyPath: 'id' });
+          ws.createIndex('bookId', 'bookId');
+          ws.createIndex('date', 'date');
+          ws.createIndex('bookDate', ['bookId', 'date'], { unique: true });
         }
       },
     });
@@ -267,9 +274,13 @@ export async function deleteGlossaryEntry(id) {
 const DEFAULT_SETTINGS = {
   id: 'app',
   apiKey: '',
-  fontSize: 'large', // small | medium | large | xlarge
+  fontSize: 'large',              // small | medium | large | xlarge
+  fontFamily: "'Tiro Devanagari Marathi', serif",
+  theme: 'parchment',             // parchment | candlelight | dark
   voiceLang: 'mr-IN',
-  preferredImageModel: 'pro', // 'pro' | 'flash'
+  preferredImageModel: 'pro',     // 'pro' | 'flash'
+  language: null,                 // 'mr' | 'en' | null (= autodetect)
+  wordGoal: 500,                  // daily word goal
 };
 
 export async function getSettings() {
@@ -284,6 +295,26 @@ export async function saveSettings(patch) {
   const merged = { ...DEFAULT_SETTINGS, ...existing, ...patch, id: 'app' };
   await db.put('settings', merged);
   return merged;
+}
+
+/* --------------------------- Word Stats --------------------------- */
+export async function saveWordStat({ bookId, date, words }) {
+  const db = await getDB();
+  // Upsert by bookId + date combo
+  const existing = await db.getFromIndex('wordStats', 'bookDate', [bookId, date]);
+  const entry = {
+    id: existing?.id ?? `ws_${bookId}_${date}`,
+    bookId,
+    date,
+    words,
+    updatedAt: Date.now(),
+  };
+  await db.put('wordStats', entry);
+  return entry;
+}
+
+export async function getWordStats(bookId) {
+  return (await getDB()).getAllFromIndex('wordStats', 'bookId', bookId);
 }
 
 /* --------------------------- Helpers ------------------------------ */

@@ -1,5 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
 import { getSettings } from './db.js';
+import { translate } from './i18n.js';
 
 /**
  * Lekhak Gemini client.
@@ -38,27 +39,30 @@ async function getClient() {
 }
 
 /**
- * Marathi-friendly error wrapper.
- * Returns an Error with .marathiMessage for UI display.
+ * Classify an error and stamp it with translation keys.
+ * Consumers read `.i18nKey` (preferred) or `.marathiMessage` (legacy).
  */
-function wrapError(err, fallback = 'काहीतरी चुकले. पुन्हा प्रयत्न करा.') {
+function wrapError(err, fallbackKey = 'errors.fallback') {
   const e = err instanceof Error ? err : new Error(String(err));
   const msg = e.message || '';
-  let marathi = fallback;
+  let key = fallbackKey;
 
   if (e.code === 'NO_KEY' || /api[_ ]?key|unauthorized|401/i.test(msg)) {
-    marathi = 'API की सेट केलेली नाही. कृपया सेटिंग्जमध्ये की जोडा.';
+    key = 'errors.noKey';
   } else if (/quota|rate|429|resource_exhausted/i.test(msg)) {
-    marathi = 'मर्यादा संपली. थोडा वेळ थांबा आणि पुन्हा प्रयत्न करा.';
+    key = 'errors.quota';
   } else if (/network|fetch|offline|failed to fetch/i.test(msg)) {
-    marathi = 'इंटरनेट जोडणी नाही. ऑफलाइन काम सुरू ठेवा.';
+    key = 'errors.network';
   } else if (/safety|blocked|harm/i.test(msg)) {
-    marathi = 'हा मजकूर AI ला तयार करता आला नाही. कृपया वेगळ्या शब्दांत पुन्हा सांगा.';
+    key = 'errors.safety';
   } else if (/timeout|deadline/i.test(msg)) {
-    marathi = 'AI ला उत्तर द्यायला उशीर झाला. पुन्हा प्रयत्न करा.';
+    key = 'errors.timeout';
   }
 
-  e.marathiMessage = marathi;
+  e.i18nKey = key;
+  // Legacy field kept so any older callers don't break — but consumers should
+  // prefer `i18nKey` and translate at the UI layer.
+  e.marathiMessage = translate('mr', key);
   return e;
 }
 
@@ -216,7 +220,7 @@ export async function generateImage({ prompt, style = 'realistic', model = 'pro'
     const blob = await blobFromBase64(img.base64, img.mime);
     return { blob, mime: img.mime, prompt: fullPrompt, model: modelId, style };
   } catch (err) {
-    throw wrapError(err, 'चित्र तयार करता आले नाही.');
+    throw wrapError(err, 'errors.imageFailed');
   }
 }
 
@@ -254,7 +258,7 @@ export async function editImage({ baseImageBlob, baseMime = 'image/png', instruc
     const blob = await blobFromBase64(img.base64, img.mime);
     return { blob, mime: img.mime, prompt: instruction, model: modelId };
   } catch (err) {
-    throw wrapError(err, 'चित्र संपादित करता आले नाही.');
+    throw wrapError(err, 'errors.imageEditFailed');
   }
 }
 

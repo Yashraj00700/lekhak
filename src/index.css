@@ -45,14 +45,69 @@
 }
 
 /* ========================================================================
+   Theme system — 3 themes: parchment (default) | candlelight | dark
+   Set data-theme="parchment|candlelight|dark" on <html>
+   ======================================================================== */
+
+/* Semantic tokens that change per theme */
+:root,
+[data-theme="parchment"] {
+  --theme-bg:        #f5edd6;
+  --theme-bg-card:   #faf3e0;
+  --theme-bg-input:  #f8edd0;
+  --theme-text:      #2a1810;
+  --theme-text-soft: #4a3528;
+  --theme-border:    rgba(201, 151, 58, 0.4);
+  --theme-paper-line: rgba(201, 151, 58, 0.18);
+  --theme-nav-bg:    rgba(250, 243, 224, 0.96);
+  --theme-toolbar-bg: rgba(245, 237, 214, 0.97);
+  --theme-shadow:    rgba(139, 69, 19, 0.18);
+  --theme-highlight: rgba(201, 151, 58, 0.45);
+  --theme-spread-binding: rgba(196, 98, 45, 0.25);
+  --theme-spread-bg: #f0e5c8;
+}
+
+[data-theme="candlelight"] {
+  --theme-bg:        #1e1408;
+  --theme-bg-card:   #251a0d;
+  --theme-bg-input:  #2e2010;
+  --theme-text:      #f2ddb8;
+  --theme-text-soft: #c9a86a;
+  --theme-border:    rgba(201, 151, 58, 0.3);
+  --theme-paper-line: rgba(201, 151, 58, 0.12);
+  --theme-nav-bg:    rgba(30, 20, 8, 0.96);
+  --theme-toolbar-bg: rgba(25, 16, 6, 0.97);
+  --theme-shadow:    rgba(0, 0, 0, 0.5);
+  --theme-highlight: rgba(201, 151, 58, 0.3);
+  --theme-spread-binding: rgba(196, 98, 45, 0.3);
+  --theme-spread-bg: #1a1005;
+}
+
+[data-theme="dark"] {
+  --theme-bg:        #0f0f0f;
+  --theme-bg-card:   #1a1a1a;
+  --theme-bg-input:  #222222;
+  --theme-text:      #e8e0d0;
+  --theme-text-soft: #a09080;
+  --theme-border:    rgba(255, 255, 255, 0.12);
+  --theme-paper-line: rgba(255, 255, 255, 0.06);
+  --theme-nav-bg:    rgba(15, 15, 15, 0.96);
+  --theme-toolbar-bg: rgba(18, 18, 18, 0.97);
+  --theme-shadow:    rgba(0, 0, 0, 0.6);
+  --theme-highlight: rgba(196, 98, 45, 0.35);
+  --theme-spread-binding: rgba(196, 98, 45, 0.2);
+  --theme-spread-bg: #141414;
+}
+
+/* ========================================================================
    Base styles
    ======================================================================== */
 :root {
   font-family: var(--font-noto);
   font-size: 18px;
   line-height: 1.6;
-  color: var(--color-ink);
-  background: var(--color-parchment);
+  color: var(--theme-text);
+  background: var(--theme-bg);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -75,14 +130,14 @@ html, body, #root {
 }
 
 body {
-  background: var(--color-parchment);
+  background: var(--theme-bg);
   background-image:
-    /* paper grain - layered noise via SVG fragments and warm radial */
     radial-gradient(ellipse 80% 60% at 30% 20%, rgba(196, 98, 45, 0.05) 0%, transparent 50%),
     radial-gradient(ellipse 70% 50% at 80% 80%, rgba(201, 151, 58, 0.06) 0%, transparent 50%),
     url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.7 0 0 0 0 0.5 0 0 0 0 0.2 0 0 0 0.06 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
   background-attachment: fixed;
   background-size: auto, auto, 220px 220px;
+  transition: background-color 0.3s ease;
 }
 
 #root {
@@ -95,7 +150,7 @@ body {
    ======================================================================== */
 h1, h2, h3, h4 {
   font-family: var(--font-tiro);
-  color: var(--color-ink);
+  color: var(--theme-text);
   letter-spacing: 0.01em;
   font-weight: 400;
 }
@@ -116,31 +171,86 @@ p, li, label, button, input, textarea, select {
   font-size: 1.375rem;
   line-height: 1.85;
   letter-spacing: 0.005em;
-  color: var(--color-ink);
+  color: var(--theme-text);
 }
 
-.lekhak-editor::placeholder {
-  color: rgba(74, 53, 40, 0.4);
+.lekhak-editor .ProseMirror {
+  outline: none;
+  min-height: 60vh;
+  padding: 1.5rem;
+  color: var(--theme-text);
+  caret-color: var(--color-terracotta);
+}
+
+.lekhak-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--theme-text-soft);
+  opacity: 0.55;
   font-style: italic;
+  pointer-events: none;
+  float: left;
+  height: 0;
+}
+
+/* Horizontal rule in editor */
+.lekhak-editor .ProseMirror hr {
+  border: none;
+  border-top: 1px solid var(--theme-border);
+  margin: 1.5rem 0;
+}
+
+/* Blockquote */
+.lekhak-editor .ProseMirror blockquote {
+  border-left: 3px solid var(--color-terracotta);
+  padding-left: 1rem;
+  margin-left: 0;
+  opacity: 0.85;
+  font-style: italic;
+}
+
+/* Code block */
+.lekhak-editor .ProseMirror pre {
+  background: var(--theme-bg-input);
+  border-radius: 8px;
+  padding: 1rem;
+  font-size: 0.9rem;
+  overflow-x: auto;
+}
+
+/* Image in editor */
+.lekhak-editor .ProseMirror img {
+  max-width: 100%;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: box-shadow 0.2s;
+}
+.lekhak-editor .ProseMirror img.ProseMirror-selectednode {
+  outline: 3px solid var(--color-terracotta);
+  outline-offset: 2px;
+}
+
+/* Selection */
+.lekhak-editor .ProseMirror ::selection {
+  background: var(--theme-highlight);
 }
 
 /* ========================================================================
    Hand-drawn card (no harsh whites, no AI gradients)
    ======================================================================== */
 .lekhak-card {
-  background: var(--color-cream);
-  border: 1px solid rgba(201, 151, 58, 0.4);
+  background: var(--theme-bg-card);
+  border: 1px solid var(--theme-border);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-warm), var(--shadow-inset-paper);
   position: relative;
 }
 
 .lekhak-card-paper {
-  background: var(--color-cream-warm);
+  background: var(--theme-bg-card);
   background-image:
     radial-gradient(circle at 15% 20%, rgba(196, 98, 45, 0.04) 0%, transparent 30%),
     radial-gradient(circle at 85% 80%, rgba(201, 151, 58, 0.05) 0%, transparent 30%);
-  border: 1px solid rgba(201, 151, 58, 0.3);
+  border: 1px solid var(--theme-border);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-warm);
 }
@@ -234,12 +344,98 @@ p, li, label, button, input, textarea, select {
   left: 0;
   right: 0;
   z-index: 50;
-  background: linear-gradient(180deg, rgba(250, 243, 224, 0.95), rgba(245, 237, 214, 0.98));
+  background: var(--theme-nav-bg);
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
-  border-top: 1px solid rgba(201, 151, 58, 0.35);
+  border-top: 1px solid var(--theme-border);
   padding: 6px 0 calc(6px + var(--safe-bottom));
-  box-shadow: 0 -4px 20px rgba(139, 69, 19, 0.12);
+  box-shadow: 0 -4px 20px var(--theme-shadow);
+  transition: background 0.3s ease;
+}
+
+/* ========================================================================
+   Toolbar — editor formatting bar
+   ======================================================================== */
+.editor-toolbar {
+  background: var(--theme-toolbar-bg);
+  border-bottom: 1px solid var(--theme-border);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  transition: background 0.3s ease;
+}
+
+/* ========================================================================
+   Two-page spread
+   ======================================================================== */
+.book-spread {
+  background: var(--theme-spread-bg);
+  border-radius: 4px;
+}
+.book-spread-page {
+  background: var(--theme-bg-card);
+  border: 1px solid var(--theme-border);
+}
+.book-spread-binding {
+  width: 8px;
+  background: linear-gradient(to right,
+    var(--theme-spread-binding) 0%,
+    rgba(196, 98, 45, 0.05) 50%,
+    var(--theme-spread-binding) 100%);
+}
+
+/* ========================================================================
+   Input / textarea — themed
+   ======================================================================== */
+.input, .textarea {
+  background: var(--theme-bg-input) !important;
+  border-color: var(--theme-border) !important;
+  color: var(--theme-text) !important;
+}
+.input:focus, .textarea:focus {
+  border-color: var(--color-gold) !important;
+}
+.input::placeholder, .textarea::placeholder {
+  color: var(--theme-text-soft);
+  opacity: 0.6;
+}
+
+/* ========================================================================
+   Word goal progress bar
+   ======================================================================== */
+.word-goal-bar {
+  height: 4px;
+  background: var(--theme-border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.word-goal-fill {
+  height: 100%;
+  background: var(--color-forest);
+  border-radius: 2px;
+  transition: width 0.4s var(--ease-warm);
+}
+.word-goal-fill.complete {
+  background: var(--color-gold);
+}
+
+/* ========================================================================
+   Autocomplete dropdown
+   ======================================================================== */
+.autocomplete-dropdown {
+  background: var(--theme-bg-card);
+  border: 1px solid var(--theme-border);
+  border-radius: var(--radius-soft);
+  box-shadow: 0 8px 24px var(--theme-shadow);
+}
+.autocomplete-item {
+  padding: 0.6rem 1rem;
+  cursor: pointer;
+  color: var(--theme-text);
+  transition: background 0.12s;
+}
+.autocomplete-item:hover,
+.autocomplete-item.selected {
+  background: rgba(196, 98, 45, 0.1);
 }
 
 /* ========================================================================

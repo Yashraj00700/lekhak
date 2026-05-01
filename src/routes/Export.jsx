@@ -24,14 +24,22 @@ import {
 import { exportBookToPdf, downloadBlob } from '../lib/pdf.js';
 import { sharePdf, whatsappShareUrl } from '../lib/share.js';
 import { useToast } from '../hooks/useToast.jsx';
+import { useLanguage } from '../hooks/useLanguage.jsx';
 
 export default function ExportPage() {
   const { bookId } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  const { t, formatNumber } = useLanguage();
 
   const [book, setBook] = useState(null);
-  const [stats, setStats] = useState({ chapters: 0, words: 0, characters: 0, glossary: 0, images: 0 });
+  const [stats, setStats] = useState({
+    chapters: 0,
+    words: 0,
+    characters: 0,
+    glossary: 0,
+    images: 0,
+  });
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(null);
   const [generatedPdf, setGeneratedPdf] = useState(null);
@@ -70,10 +78,10 @@ export default function ExportPage() {
         onProgress: (p) => setProgress(p),
       });
       setGeneratedPdf(blob);
-      toast.success('PDF तयार झाली');
+      toast.success(t('export.success'));
     } catch (err) {
       console.error(err);
-      toast.error('PDF तयार करता आली नाही');
+      toast.error(t('export.failed'));
     } finally {
       setBusy(false);
       setProgress(null);
@@ -87,78 +95,117 @@ export default function ExportPage() {
 
   const handleShare = async () => {
     if (!generatedPdf || !book) return;
+    const shareText = t('export.shareMessage', {
+      title: book.title,
+      author: book.author ? ` — ${book.author}` : '',
+    });
     const result = await sharePdf({
       blob: generatedPdf,
       filename: `${book.title}.pdf`,
       title: book.title,
-      text: `${book.title}${book.author ? ' — ' + book.author : ''}\n\nलेखक अनुप्रयोगाद्वारे तयार केले`,
+      text: shareText,
     });
     if (result.method === 'download') {
-      toast.info('PDF डाउनलोड झाली. WhatsApp उघडून पाठवा.');
+      toast.info(t('export.downloaded'));
     }
   };
 
   const handleWhatsApp = () => {
-    const message = `${book?.title}${book?.author ? ' — ' + book.author : ''}\n\nहे माझे पुस्तक — लेखक अनुप्रयोगाद्वारे तयार केले`;
+    if (!book) return;
+    const message = t('export.shareMessage', {
+      title: `${book.title}${book.author ? ' — ' + book.author : ''}`,
+    });
     window.open(whatsappShareUrl(message), '_blank', 'noopener,noreferrer');
   };
+
+  const progressLabel = (() => {
+    if (!progress) return '';
+    if (progress.stage === 'cover') return t('export.progress.cover');
+    if (progress.stage === 'chapter')
+      return t('export.progress.chapter', { current: progress.current, total: progress.total });
+    if (progress.stage === 'characters') return t('export.progress.characters');
+    if (progress.stage === 'done') return t('export.progress.done');
+    return t('export.generating');
+  })();
 
   if (!book) {
     return (
       <PageTransition>
-        <div className="flex items-center justify-center min-h-[40vh]">
-          <Loader2 className="animate-spin text-[var(--color-terracotta)]" size={28} />
+        <div
+          className="flex items-center justify-center min-h-[40vh]"
+          style={{ color: 'var(--theme-text-soft)' }}
+        >
+          <Loader2 className="animate-spin" size={28} />
+          <span className="sr-only">{t('common.loading')}</span>
         </div>
       </PageTransition>
     );
   }
 
-  const progressLabel = (() => {
-    if (!progress) return '';
-    if (progress.stage === 'cover') return 'मुखपृष्ठ तयार करत आहे…';
-    if (progress.stage === 'chapter') return `प्रकरण ${progress.current} / ${progress.total} जोडत आहे…`;
-    if (progress.stage === 'characters') return 'पात्रे जोडत आहे…';
-    if (progress.stage === 'done') return 'तयार!';
-    return 'तयार होत आहे…';
-  })();
-
   return (
     <PageTransition>
-      <div className="max-w-2xl mx-auto px-4 pt-4 pb-4">
+      <div className="max-w-2xl mx-auto px-4 pt-4 pb-6">
+        {/* Header */}
         <div className="flex items-center gap-2 mb-3">
           <button
             onClick={() => navigate(`/book/${bookId}`)}
-            className="btn-icon rounded-[10px] hover:bg-[rgba(201,151,58,0.12)]"
+            className="btn-icon rounded-[10px]"
+            style={{ color: 'var(--theme-text-soft)' }}
+            aria-label={t('common.cancel')}
           >
             <ArrowLeft size={22} />
           </button>
           <div className="flex-1">
-            <div className="text-[var(--color-terracotta)] text-xs font-semibold tracking-widest uppercase">
-              निर्यात
+            <div
+              className="text-xs font-semibold tracking-widest uppercase"
+              style={{ color: 'var(--theme-text-soft)' }}
+            >
+              {t('export.eyebrow')}
             </div>
-            <h1 className="font-tiro text-[1.8rem] m-0 leading-tight">PDF आणि शेअर</h1>
+            <h1
+              className="font-tiro text-[1.8rem] m-0 leading-tight"
+              style={{ color: 'var(--theme-text)' }}
+            >
+              {t('export.title')}
+            </h1>
           </div>
         </div>
 
         {/* Book preview card */}
-        <div className="lekhak-card-paper p-5 mb-4 text-center">
-          <div className="text-[var(--color-terracotta)] text-xs uppercase tracking-widest mb-2">
-            पुस्तक
+        <div
+          className="rounded-2xl p-5 mb-4 text-center"
+          style={{
+            background: 'var(--theme-bg-card)',
+            border: '1px solid var(--theme-border)',
+          }}
+        >
+          <div
+            className="text-xs uppercase tracking-widest mb-2"
+            style={{ color: 'var(--theme-text-soft)' }}
+          >
+            {t('export.book')}
           </div>
-          <h2 className="font-tiro text-[1.7rem] m-0 leading-tight">{book.title}</h2>
+          <h2
+            className="font-tiro text-[1.7rem] m-0 leading-tight"
+            style={{ color: 'var(--theme-text)' }}
+          >
+            {book.title}
+          </h2>
           {book.author && (
-            <div className="text-[var(--color-ink-soft)] mt-1.5">— {book.author}</div>
+            <div className="mt-1.5" style={{ color: 'var(--theme-text-soft)' }}>
+              — {book.author}
+            </div>
           )}
           <TribalDivider variant="warli" className="mt-3 mb-3" />
           <div className="grid grid-cols-2 gap-2 text-left">
-            <Stat icon={BookOpen} label="प्रकरणे" value={stats.chapters} />
-            <Stat icon={Library} label="शब्द" value={stats.words.toLocaleString('mr-IN')} />
-            <Stat icon={Users} label="पात्रे" value={stats.characters} />
-            <Stat icon={ImageIcon} label="चित्रे" value={stats.images} />
+            <Stat icon={BookOpen} label={t('export.statChapters')} value={formatNumber(stats.chapters)} />
+            <Stat icon={Library}  label={t('export.statWords')}    value={formatNumber(stats.words)} />
+            <Stat icon={Users}    label={t('export.statCharacters')} value={formatNumber(stats.characters)} />
+            <Stat icon={ImageIcon} label={t('export.statImages')}  value={formatNumber(stats.images)} />
           </div>
         </div>
 
-        {/* Generate */}
+        {/* Generate button (shown until PDF is ready) */}
         {!generatedPdf && (
           <button
             onClick={generate}
@@ -168,65 +215,98 @@ export default function ExportPage() {
             {busy ? (
               <>
                 <Loader2 size={22} className="animate-spin" />
-                {progressLabel || 'तयार होत आहे…'}
+                {progressLabel || t('export.generating')}
               </>
             ) : (
               <>
                 <FileDown size={22} />
-                PDF तयार करा
+                {t('export.generate')}
               </>
             )}
           </button>
         )}
 
+        {/* Actions after PDF is ready */}
         {generatedPdf && (
           <motion.div
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             className="space-y-3"
           >
-            <div className="lekhak-card-paper p-4 flex items-center gap-3">
-              <CheckCircle2 size={28} className="text-[var(--color-forest)] flex-shrink-0" />
+            {/* Success banner */}
+            <div
+              className="rounded-2xl p-4 flex items-center gap-3"
+              style={{
+                background: 'var(--theme-bg-card)',
+                border: '1px solid var(--theme-border)',
+              }}
+            >
+              <CheckCircle2
+                size={28}
+                className="flex-shrink-0"
+                style={{ color: 'var(--theme-text)' }}
+              />
               <div>
-                <div className="font-semibold text-[var(--color-ink)]">PDF तयार आहे!</div>
-                <div className="text-sm text-[var(--color-ink-soft)]">
-                  आता डाउनलोड करा किंवा WhatsApp वर पाठवा
+                <div
+                  className="font-semibold"
+                  style={{ color: 'var(--theme-text)' }}
+                >
+                  {t('export.success')}
+                </div>
+                <div
+                  className="text-sm"
+                  style={{ color: 'var(--theme-text-soft)' }}
+                >
+                  {t('export.successSub')}
                 </div>
               </div>
             </div>
 
+            {/* Download */}
             <button onClick={handleDownload} className="btn btn-primary w-full text-lg">
               <FileDown size={22} />
-              PDF डाउनलोड करा
+              {t('export.download')}
             </button>
 
+            {/* Share */}
             <button onClick={handleShare} className="btn btn-secondary w-full text-lg">
               <Share2 size={22} />
-              शेअर करा
+              {t('export.share')}
             </button>
 
+            {/* WhatsApp */}
             <button
               onClick={handleWhatsApp}
               className="btn btn-ghost w-full text-lg"
-              style={{ borderColor: '#25D366', color: '#1f7d4d' }}
+              style={{
+                borderColor: '#25D366',
+                color: '#1f7d4d',
+                background: 'var(--theme-bg-input)',
+              }}
             >
               <Share2 size={20} />
-              WhatsApp वर संदेश पाठवा
+              {t('export.whatsapp')}
             </button>
 
+            {/* Regenerate */}
             <button
               onClick={generate}
               disabled={busy}
               className="btn btn-ghost w-full"
+              style={{ color: 'var(--theme-text-soft)' }}
             >
-              पुन्हा तयार करा
+              {t('export.regenerate')}
             </button>
           </motion.div>
         )}
 
+        {/* Empty-state hint */}
         {stats.chapters === 0 && (
-          <p className="text-center text-[var(--color-ink-soft)] text-sm mt-3">
-            निर्यात करण्यासाठी आधी एक प्रकरण लिहा.
+          <p
+            className="text-center text-sm mt-3"
+            style={{ color: 'var(--theme-text-soft)' }}
+          >
+            {t('export.empty')}
           </p>
         )}
       </div>
@@ -234,13 +314,35 @@ export default function ExportPage() {
   );
 }
 
+/* ---------- Stat tile ---------- */
+
 function Stat({ icon: Icon, label, value }) {
   return (
-    <div className="flex items-center gap-2 px-2.5 py-2 rounded-[10px] bg-[var(--color-cream-warm)] border border-[rgba(201,151,58,0.4)]">
-      <Icon size={18} className="text-[var(--color-terracotta)] flex-shrink-0" />
+    <div
+      className="flex items-center gap-2 px-2.5 py-2 rounded-[10px]"
+      style={{
+        background: 'var(--theme-bg-input)',
+        border: '1px solid var(--theme-border)',
+      }}
+    >
+      <Icon
+        size={18}
+        className="flex-shrink-0"
+        style={{ color: 'var(--theme-text-soft)' }}
+      />
       <div className="min-w-0">
-        <div className="text-xs text-[var(--color-ink-soft)] leading-none">{label}</div>
-        <div className="font-semibold text-[var(--color-ink)] mt-0.5">{value}</div>
+        <div
+          className="text-xs leading-none"
+          style={{ color: 'var(--theme-text-soft)' }}
+        >
+          {label}
+        </div>
+        <div
+          className="font-semibold mt-0.5"
+          style={{ color: 'var(--theme-text)' }}
+        >
+          {value}
+        </div>
       </div>
     </div>
   );

@@ -1,33 +1,49 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Plus, BookOpen, Trash2, Calendar } from 'lucide-react';
+import { Plus, BookOpen, Trash2, Calendar, Languages } from 'lucide-react';
 import PageTransition from '../components/PageTransition.jsx';
 import TribalDivider from '../components/TribalDivider.jsx';
 import Modal from '../components/Modal.jsx';
 import { listBooks, createBook, deleteBook, getImage } from '../lib/db.js';
 import { useToast } from '../hooks/useToast.jsx';
+import { useLanguage } from '../hooks/useLanguage.jsx';
 
 export default function Home() {
-  const navigate = useNavigate();
-  const toast = useToast();
-  const [books, setBooks] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const navigate           = useNavigate();
+  const toast              = useToast();
+  const { t, formatDate, isMarathi, setLang } = useLanguage();
+  const [books, setBooks]  = useState([]);
+  const [loading, setLoading]       = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
-  const [form, setForm] = useState({ title: '', author: '', dedication: '' });
+  const [form, setForm]    = useState({ title: '', author: '', dedication: '' });
+
+  // Cover image URLs — tracked in a ref to avoid stale-closure leaks
+  const coverUrlsRef = useRef({});
   const [coverUrls, setCoverUrls] = useState({});
+
+  const revokePreviousUrls = () => {
+    Object.values(coverUrlsRef.current).forEach((u) => URL.revokeObjectURL(u));
+    coverUrlsRef.current = {};
+  };
 
   const refresh = async () => {
     setLoading(true);
     const list = await listBooks();
     setBooks(list);
-    // Resolve cover image blobs to object URLs
+
+    // Revoke old object URLs before creating new ones
+    revokePreviousUrls();
     const urls = {};
     for (const b of list) {
       if (b.coverImageId) {
         const img = await getImage(b.coverImageId);
-        if (img?.blob) urls[b.id] = URL.createObjectURL(img.blob);
+        if (img?.blob) {
+          const url = URL.createObjectURL(img.blob);
+          urls[b.id] = url;
+          coverUrlsRef.current[b.id] = url;
+        }
       }
     }
     setCoverUrls(urls);
@@ -36,51 +52,69 @@ export default function Home() {
 
   useEffect(() => {
     refresh();
-    return () => Object.values(coverUrls).forEach((u) => URL.revokeObjectURL(u));
-    // eslint-disable-next-line
+    return () => revokePreviousUrls();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleCreate = async (e) => {
     e?.preventDefault();
     if (!form.title.trim()) {
-      toast.warning('कृपया पुस्तकाचे शीर्षक लिहा');
+      toast.warning(t('bookForm.titleRequired'));
       return;
     }
     const book = await createBook({
-      title: form.title.trim(),
-      author: form.author.trim(),
+      title:      form.title.trim(),
+      author:     form.author.trim(),
       dedication: form.dedication.trim(),
     });
     setCreateOpen(false);
     setForm({ title: '', author: '', dedication: '' });
-    toast.success('पुस्तक तयार झाले');
+    toast.success(t('bookForm.created'));
     navigate(`/book/${book.id}`);
   };
 
   const handleDelete = async () => {
     if (!confirmDelete) return;
+    // Revoke the cover URL for this book if any
+    if (coverUrlsRef.current[confirmDelete.id]) {
+      URL.revokeObjectURL(coverUrlsRef.current[confirmDelete.id]);
+      delete coverUrlsRef.current[confirmDelete.id];
+    }
     await deleteBook(confirmDelete.id);
     setConfirmDelete(null);
     await refresh();
-    toast.success('पुस्तक काढून टाकले');
+    toast.success(t('bookForm.deleted'));
   };
 
   return (
     <PageTransition>
       <div className="max-w-2xl mx-auto px-4 pt-6 pb-4">
+
         {/* Header */}
-        <div className="text-center mb-2">
-          <div className="inline-flex items-center gap-2 text-[var(--color-terracotta)] text-sm font-medium tracking-wider uppercase mb-1">
-            <span className="h-px w-6 bg-[var(--color-gold)]" />
-            लेखक
-            <span className="h-px w-6 bg-[var(--color-gold)]" />
+        <div className="flex items-start justify-between mb-2">
+          <div className="flex-1 text-center">
+            <div className="inline-flex items-center gap-2 text-[var(--color-terracotta)] text-sm font-medium tracking-wider uppercase mb-1">
+              <span className="h-px w-6 bg-[var(--color-gold)]" />
+              {t('home.eyebrow')}
+              <span className="h-px w-6 bg-[var(--color-gold)]" />
+            </div>
+            <h1 className="text-[var(--theme-text)] text-balance m-0 leading-tight">
+              {t('home.title')}
+            </h1>
+            <p className="text-[var(--theme-text-soft)] mt-1 text-base">
+              {t('home.subtitle')}
+            </p>
           </div>
-          <h1 className="font-tiro text-[var(--color-ink)] text-balance">
-            तुमची पुस्तके
-          </h1>
-          <p className="text-[var(--color-ink-soft)] mt-1 text-base">
-            आदिवासी कथांचे आपले संग्रह
-          </p>
+
+          {/* Language toggle — prominent for elderly user */}
+          <button
+            onClick={() => setLang(isMarathi ? 'en' : 'mr')}
+            className="flex-shrink-0 flex items-center gap-1.5 px-3 h-9 rounded-[9px] border border-[var(--theme-border)] text-sm font-medium text-[var(--theme-text)] hover:bg-[rgba(196,98,45,0.08)] mt-1"
+            title={t('common.toggleLanguage')}
+          >
+            <Languages size={15} />
+            {isMarathi ? 'EN' : 'मराठी'}
+          </button>
         </div>
 
         <TribalDivider variant="warli" className="my-5" />
@@ -91,10 +125,10 @@ export default function Home() {
           className="btn btn-primary w-full mb-6 text-lg"
         >
           <Plus size={22} />
-          नवीन पुस्तक सुरू करा
+          {t('home.newBook')}
         </button>
 
-        {/* Books list */}
+        {/* Books grid */}
         {loading ? (
           <div className="space-y-3">
             {[0, 1, 2].map((i) => (
@@ -102,7 +136,7 @@ export default function Home() {
             ))}
           </div>
         ) : books.length === 0 ? (
-          <EmptyState onCreate={() => setCreateOpen(true)} />
+          <EmptyState onCreate={() => setCreateOpen(true)} t={t} />
         ) : (
           <ul className="space-y-3">
             {books.map((b, i) => (
@@ -115,28 +149,24 @@ export default function Home() {
               >
                 <button
                   onClick={() => navigate(`/book/${b.id}`)}
-                  className="w-full text-left p-4 flex items-stretch gap-4 active:bg-[rgba(201,151,58,0.08)] transition-colors"
+                  className="w-full text-left p-4 flex items-stretch gap-4 hover:bg-[rgba(201,151,58,0.06)] transition-colors"
                 >
-                  <div className="w-16 h-20 flex-shrink-0 rounded-[8px] overflow-hidden border border-[var(--color-gold)] bg-[var(--color-parchment)] flex items-center justify-center">
+                  {/* Cover thumbnail */}
+                  <div className="w-16 h-20 flex-shrink-0 rounded-[8px] overflow-hidden border border-[var(--theme-border)] bg-[var(--theme-bg)] flex items-center justify-center">
                     {coverUrls[b.id] ? (
-                      <img
-                        src={coverUrls[b.id]}
-                        alt=""
-                        className="w-full h-full object-cover"
-                      />
+                      <img src={coverUrls[b.id]} alt="" className="w-full h-full object-cover" />
                     ) : (
-                      <BookOpen
-                        size={28}
-                        className="text-[var(--color-terracotta)] opacity-60"
-                      />
+                      <BookOpen size={28} className="text-[var(--color-terracotta)] opacity-60" />
                     )}
                   </div>
+
+                  {/* Meta */}
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-tiro text-[1.35rem] text-[var(--color-ink)] truncate m-0 leading-snug">
+                    <h3 className="text-[1.3rem] text-[var(--theme-text)] truncate m-0 leading-snug font-['Tiro_Devanagari_Marathi',serif]">
                       {b.title}
                     </h3>
                     {b.author && (
-                      <p className="text-[var(--color-ink-soft)] text-sm m-0 mt-0.5 truncate">
+                      <p className="text-[var(--theme-text-soft)] text-sm m-0 mt-0.5 truncate">
                         — {b.author}
                       </p>
                     )}
@@ -145,14 +175,13 @@ export default function Home() {
                       {formatDate(b.updatedAt)}
                     </p>
                   </div>
+
+                  {/* Delete */}
                   <div className="flex items-center">
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setConfirmDelete(b);
-                      }}
-                      className="btn-icon text-[var(--color-ink-soft)] hover:text-[var(--color-rust)] rounded-[8px]"
-                      aria-label="काढून टाका"
+                      onClick={(e) => { e.stopPropagation(); setConfirmDelete(b); }}
+                      className="w-10 h-10 flex items-center justify-center rounded-[8px] text-[var(--theme-text-soft)] hover:text-[var(--color-rust)] hover:bg-[rgba(160,66,26,0.08)]"
+                      aria-label={t('common.delete')}
                     >
                       <Trash2 size={18} />
                     </button>
@@ -164,80 +193,79 @@ export default function Home() {
         )}
       </div>
 
-      {/* Create modal */}
+      {/* Create book modal */}
       <Modal
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        title="नवीन पुस्तक"
+        title={t('bookForm.title')}
         footer={
           <div className="flex gap-2 justify-end">
             <button onClick={() => setCreateOpen(false)} className="btn btn-ghost">
-              रद्द करा
+              {t('common.cancel')}
             </button>
             <button onClick={handleCreate} className="btn btn-primary">
-              सुरू करा
+              {t('bookForm.start')}
             </button>
           </div>
         }
       >
         <form onSubmit={handleCreate} className="space-y-4">
-          <Field label="शीर्षक" required>
+          <Field label={t('bookForm.fieldTitle')} required>
             <input
               autoFocus
               className="input"
               value={form.title}
               onChange={(e) => setForm({ ...form, title: e.target.value })}
-              placeholder="उदा. आदिवासी कथा"
+              placeholder={t('bookForm.placeholderTitle')}
             />
           </Field>
-          <Field label="लेखक">
+          <Field label={t('bookForm.fieldAuthor')}>
             <input
               className="input"
               value={form.author}
               onChange={(e) => setForm({ ...form, author: e.target.value })}
-              placeholder="आपले नाव"
+              placeholder={t('bookForm.placeholderAuthor')}
             />
           </Field>
-          <Field label="समर्पण (पर्यायी)">
+          <Field label={`${t('bookForm.fieldDedication')} (${t('common.optional')})`}>
             <textarea
               rows={2}
               className="textarea"
               value={form.dedication}
               onChange={(e) => setForm({ ...form, dedication: e.target.value })}
-              placeholder="हे पुस्तक कोणाला अर्पण करायचे?"
+              placeholder={t('bookForm.dedicationHint')}
             />
           </Field>
         </form>
       </Modal>
 
-      {/* Delete confirm */}
+      {/* Delete confirm modal */}
       <Modal
         open={!!confirmDelete}
         onClose={() => setConfirmDelete(null)}
-        title="पुस्तक काढून टाकायचे?"
+        title={t('bookForm.confirmDelete.title')}
         size="sm"
         footer={
           <div className="flex gap-2 justify-end">
             <button onClick={() => setConfirmDelete(null)} className="btn btn-ghost">
-              नाही
+              {t('common.cancel')}
             </button>
             <button
               onClick={handleDelete}
-              className="btn"
+              className="btn h-11 px-5"
               style={{
                 background: 'var(--color-rust)',
                 color: 'var(--color-cream)',
                 boxShadow: '0 3px 0 #6b2a10',
               }}
             >
-              होय, काढून टाका
+              {t('bookForm.confirmDelete.confirm')}
             </button>
           </div>
         }
       >
-        <p className="text-[var(--color-ink-soft)]">
-          “{confirmDelete?.title}” आणि त्यातील सर्व प्रकरणे, चित्रे आणि पात्रे
-          कायमची नष्ट होतील. हे पुनर्संचयित करता येणार नाही.
+        <p className="text-[var(--theme-text-soft)]">
+          {t('bookForm.confirmDelete.body', { title: confirmDelete?.title ?? '' })}
         </p>
       </Modal>
     </PageTransition>
@@ -247,7 +275,7 @@ export default function Home() {
 function Field({ label, required, children }) {
   return (
     <label className="block">
-      <span className="block text-sm font-medium text-[var(--color-ink-soft)] mb-1.5">
+      <span className="block text-sm font-medium text-[var(--theme-text-soft)] mb-1.5">
         {label}
         {required && <span className="text-[var(--color-terracotta)] ml-1">*</span>}
       </span>
@@ -256,32 +284,22 @@ function Field({ label, required, children }) {
   );
 }
 
-function EmptyState({ onCreate }) {
+function EmptyState({ onCreate, t }) {
   return (
     <div className="lekhak-card-paper p-8 text-center">
-      <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-[var(--color-parchment)] flex items-center justify-center border border-[var(--color-gold)]">
+      <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-[var(--theme-bg)] flex items-center justify-center border border-[var(--theme-border)]">
         <BookOpen size={28} className="text-[var(--color-terracotta)]" />
       </div>
-      <h3 className="font-tiro text-[1.5rem] m-0 mb-2">अजून कोणतेही पुस्तक नाही</h3>
-      <p className="text-[var(--color-ink-soft)] mb-4">
-        आपली पहिली कथा लिहायला सुरुवात करा. प्रत्येक शब्द जतन होईल — ऑफलाइनही.
+      <h3 className="text-[1.5rem] m-0 mb-2 text-[var(--theme-text)]">
+        {t('home.empty.title')}
+      </h3>
+      <p className="text-[var(--theme-text-soft)] mb-4 leading-relaxed">
+        {t('home.empty.body')}
       </p>
       <button onClick={onCreate} className="btn btn-secondary">
         <Plus size={20} />
-        पहिले पुस्तक तयार करा
+        {t('home.empty.cta')}
       </button>
     </div>
   );
-}
-
-function formatDate(ts) {
-  if (!ts) return '';
-  const d = new Date(ts);
-  const today = new Date();
-  const sameDay =
-    d.getFullYear() === today.getFullYear() &&
-    d.getMonth() === today.getMonth() &&
-    d.getDate() === today.getDate();
-  if (sameDay) return 'आज ' + d.toLocaleTimeString('mr-IN', { hour: '2-digit', minute: '2-digit' });
-  return d.toLocaleDateString('mr-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }

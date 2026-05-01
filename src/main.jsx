@@ -1,31 +1,38 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
-import { registerSW } from 'virtual:pwa-register';
 import './index.css';
 import App from './App.jsx';
 import { ToastProvider } from './hooks/useToast.jsx';
+import { LanguageProvider } from './hooks/useLanguage.jsx';
+import { setSWUpdateController } from './lib/swUpdate.js';
 
-// Register service worker (auto-update). Failures are non-fatal — app still works.
+// Register the Workbox-generated service worker. The hook surfaces the
+// "needRefresh" / "offlineReady" signals via swUpdate so the UI can prompt.
 if ('serviceWorker' in navigator) {
-  try {
-    registerSW({
-      immediate: true,
-      onOfflineReady() {
-        console.info('[Lekhak] Ready for offline use');
-      },
-    });
-  } catch (e) {
-    console.warn('[Lekhak] SW registration deferred:', e);
-  }
+  import('virtual:pwa-register')
+    .then(({ registerSW }) => {
+      const updateSW = registerSW({
+        immediate: true,
+        onNeedRefresh() {
+          setSWUpdateController({ needsRefresh: true, update: () => updateSW(true) });
+        },
+        onOfflineReady() {
+          setSWUpdateController({ offlineReady: true });
+        },
+      });
+    })
+    .catch((e) => console.warn('[Lekhak] SW registration deferred:', e));
 }
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <BrowserRouter>
-      <ToastProvider>
-        <App />
-      </ToastProvider>
+      <LanguageProvider>
+        <ToastProvider>
+          <App />
+        </ToastProvider>
+      </LanguageProvider>
     </BrowserRouter>
   </StrictMode>,
 );

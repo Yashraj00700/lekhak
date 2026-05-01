@@ -1,537 +1,584 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+/**
+ * BookEditor v2 — TipTap + Yjs + three input methods + word goal
+ *
+ * Architecture:
+ *  - TipTap handles rich text (headings, bold, images, blockquote …)
+ *  - Yjs (via useYjsEditor) persists every keystroke to IndexedDB automatically
+ *  - InputMethodPicker handles मराठी / Roman→Devanagari / Voice tabs
+ *  - VoiceRibbon shows interim speech text below the editor
+ *  - WordGoalBar shows daily progress + streak
+ *  - Chapter list accessible via drawer
+ *  - AI Assist panel slides up from bottom
+ */
+
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  ArrowLeft,
-  ChevronLeft,
-  ChevronRight,
-  Plus,
-  ImageIcon,
-  Users,
-  Library,
-  FileDown,
-  Sparkles,
-  Trash2,
-  CheckCircle2,
-  Loader2,
-  CircleDot,
-  Settings as Cog,
-  BookOpen,
-  Pencil,
+  ChevronLeft, ChevronRight, List as ListIcon, Sparkles,
+  BookOpen, Plus, Trash2, X, BookOpenCheck, Camera,
 } from 'lucide-react';
 import PageTransition from '../components/PageTransition.jsx';
-import VoiceButton from '../components/VoiceButton.jsx';
-import AIAssistPanel from '../components/AIAssistPanel.jsx';
+import LekhakEditor from '../components/editor/LekhakEditor.jsx';
+import EditorToolbar from '../components/editor/EditorToolbar.jsx';
+import InputMethodPicker from '../components/editor/InputMethodPicker.jsx';
+import VoiceRibbon from '../components/editor/VoiceRibbon.jsx';
+import WordGoalBar from '../components/book/WordGoalBar.jsx';
 import Modal from '../components/Modal.jsx';
-import TribalDivider from '../components/TribalDivider.jsx';
-import {
-  getBook,
-  updateBook,
-  listChapters,
-  createChapter,
-  updateChapter,
-  deleteChapter,
-} from '../lib/db.js';
-import useAutosave from '../hooks/useAutosave.js';
+import { useYjsEditor } from '../hooks/useYjsEditor.js';
+import { useWordGoal } from '../hooks/useWordGoal.js';
+import { useLanguage } from '../hooks/useLanguage.jsx';
 import { useToast } from '../hooks/useToast.jsx';
+import {
+  getBook, updateBook,
+  listChapters, createChapter, updateChapter, deleteChapter, getSettings, saveSettings,
+} from '../lib/db.js';
+import { suggestContinuation, fixGrammar, suggestAlternatives } from '../lib/gemini.js';
 
-const FONT_SIZES = {
-  small: '1.05rem',
-  medium: '1.2rem',
-  large: '1.375rem',
-  xlarge: '1.6rem',
+/* ─── Font size value map ─────────────────────────────────────────── */
+const FONT_SIZE_MAP = {
+  small:  '1.1rem',
+  medium: '1.25rem',
+  large:  '1.375rem',
+  xlarge: '1.625rem',
 };
 
 export default function BookEditor() {
   const { bookId } = useParams();
-  const navigate = useNavigate();
-  const toast = useToast();
+  const navigate   = useNavigate();
+  const { t }      = useLanguage();
+  const toast      = useToast();
+  const editorRef  = useRef(null);
 
-  const [book, setBook] = useState(null);
-  const [chapters, setChapters] = useState([]);
-  const [currentId, setCurrentId] = useState(null);
-  const [content, setContent] = useState('');
-  const [titleEdit, setTitleEdit] = useState('');
-  const [interim, setInterim] = useState('');
-  const [showChapterList, setShowChapterList] = useState(false);
-  const [showAI, setShowAI] = useState(false);
-  const [showBookMeta, setShowBookMeta] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(null);
-  const [selection, setSelection] = useState('');
-  const [fontSize, setFontSize] = useState('large');
+  /* ─── Book & chapter state ─────────────────────────────────────── */
+  const [book, setBook]               = useState(null);
+  const [chapters, setChapters]       = useState([]);
+  const [chapterIdx, setChapterIdx]   = useState(0);
+  const [chapterTitle, setChapterTitle] = useState('');
+  const [settings, setSettings]       = useState({});
 
-  const editorRef = useRef(null);
+  /* ─── UI state ─────────────────────────────────────────────────── */
+  const [showChapters, setShowChapters]         = useState(false);
+  const [showAI, setShowAI]                     = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [inputTab, setInputTab]                 = useState('marathi');
+  const [voiceInterim, setVoiceInterim]         = useState('');
+  const [isListening, setIsListening]           = useState(false);
+  const [wordCount, setWordCount]               = useState(0);
+  const [selectionText, setSelectionText]       = useState('');
+  const [fontFamily, setFontFamily]             = useState("'Tiro Devanagari Marathi', serif");
 
-  /* ---------- Load ---------- */
+  /* ─── AI state ─────────────────────────────────────────────────── */
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiResult, setAiResult]   = useState('');
+  const [aiMode, setAiMode]       = useState('continue');
+
+  const currentChapter = chapters[chapterIdx] ?? null;
+
+  /* ─── Yjs autosave for current chapter ─────────────────────────── */
+  const { ydoc, synced } = useYjsEditor(currentChapter?.id ?? null);
+
+  /* ─── Word goal tracker ─────────────────────────────────────────── */
+  const { goal, todayCount, streak, percent, met, updateWordCount } =
+    useWordGoal(bookId);
+
+  /* ─── Load book + chapters + settings on mount ───────────────────── */
   useEffect(() => {
+    if (!bookId) return;
     (async () => {
-      const b = await getBook(bookId);
+      const [b, chs, s] = await Promise.all([
+        getBook(bookId),
+        listChapters(bookId),
+        getSettings(),
+      ]);
       if (!b) { navigate('/'); return; }
       setBook(b);
-      const list = await listChapters(bookId);
+      setSettings(s);
+      setFontFamily(s.fontFamily || "'Tiro Devanagari Marathi', serif");
+
+      let list = chs;
+      if (list.length === 0) {
+        const first = await createChapter(bookId, {
+          title: t('editor.defaultChapterTitle', { n: 1 }),
+        });
+        list = [first];
+      }
       setChapters(list);
-      const firstId = list[0]?.id || (await createChapter(bookId)).id;
-      const refreshed = list.length > 0 ? list : await listChapters(bookId);
-      setChapters(refreshed);
-      setCurrentId(firstId);
-
-      // Load font size pref
-      const { getSettings } = await import('../lib/db.js');
-      const s = await getSettings();
-      setFontSize(s.fontSize || 'large');
+      setChapterTitle(list[0]?.title ?? '');
     })();
-  }, [bookId, navigate]);
+  }, [bookId, navigate, t]);
 
-  /* ---------- Switch chapter ---------- */
+  /* ─── Sync chapter title when switching chapters ─────────────────── */
   useEffect(() => {
-    if (!currentId) return;
-    const ch = chapters.find((c) => c.id === currentId);
-    if (ch) {
-      setContent(ch.content || '');
-      setTitleEdit(ch.title || '');
-    }
-  }, [currentId, chapters]);
+    setChapterTitle(currentChapter?.title ?? '');
+    setAiResult('');
+    setSelectionText('');
+  }, [currentChapter?.id]);
 
-  /* ---------- Autosave content ---------- */
-  const { status: saveStatus, flush: flushSave } = useAutosave(
-    content,
-    async (val) => {
-      if (!currentId) return;
-      await updateChapter(currentId, { content: val });
-    },
-    { interval: 30_000 }
+  /* ─── Persist chapter title on blur ─────────────────────────────── */
+  const saveTitle = useCallback(async () => {
+    if (!currentChapter || chapterTitle === currentChapter.title) return;
+    const updated = await updateChapter(currentChapter.id, { title: chapterTitle });
+    setChapters((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+  }, [currentChapter, chapterTitle]);
+
+  /* ─── Word count → word goal tracker ────────────────────────────── */
+  const handleWordCount = useCallback(
+    (n) => { setWordCount(n); updateWordCount(n); },
+    [updateWordCount]
   );
 
-  /* ---------- Autosave title (debounced shorter) ---------- */
-  useEffect(() => {
-    if (!currentId) return;
-    const t = setTimeout(async () => {
-      const ch = chapters.find((c) => c.id === currentId);
-      if (ch && ch.title !== titleEdit) {
-        const updated = await updateChapter(currentId, { title: titleEdit });
-        if (updated) {
-          setChapters((cs) => cs.map((c) => (c.id === updated.id ? updated : c)));
-        }
-      }
-    }, 800);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line
-  }, [titleEdit, currentId]);
+  /* ─── Chapter navigation ─────────────────────────────────────────── */
+  const goToChapter = useCallback((idx) => {
+    setChapterIdx(Math.max(0, Math.min(idx, chapters.length - 1)));
+    setShowChapters(false);
+    setAiResult('');
+  }, [chapters.length]);
 
-  /* ---------- Voice transcripts ---------- */
-  const appendVoice = (text) => {
-    if (!text) return;
-    setContent((prev) => {
-      const sep = prev && !prev.endsWith(' ') && !prev.endsWith('\n') ? ' ' : '';
-      return prev + sep + text;
+  const addChapter = useCallback(async () => {
+    const n = chapters.length + 1;
+    const ch = await createChapter(bookId, {
+      title: t('editor.defaultChapterTitle', { n }),
     });
-    setInterim('');
-  };
+    const updated = [...chapters, ch];
+    setChapters(updated);
+    setChapterIdx(updated.length - 1);
+    setShowChapters(false);
+    toast.success(t('editor.chapterAdded'));
+  }, [bookId, chapters, t, toast]);
 
-  /* ---------- Selection capture ---------- */
-  const onSelect = () => {
-    const ta = editorRef.current;
-    if (!ta) return;
-    const sel = ta.value.substring(ta.selectionStart, ta.selectionEnd);
-    setSelection(sel);
-  };
+  const removeChapter = useCallback(async () => {
+    if (!currentChapter || chapters.length <= 1) return;
+    await deleteChapter(currentChapter.id);
+    const remaining = chapters.filter((c) => c.id !== currentChapter.id);
+    setChapters(remaining);
+    setChapterIdx(Math.min(chapterIdx, remaining.length - 1));
+    setShowDeleteConfirm(false);
+    toast.success(t('editor.chapterRemoved'));
+  }, [currentChapter, chapters, chapterIdx, t, toast]);
 
-  /* ---------- Chapter ops ---------- */
-  const addChapter = async () => {
-    await flushSave();
-    const ch = await createChapter(bookId);
-    const list = await listChapters(bookId);
-    setChapters(list);
-    setCurrentId(ch.id);
-    toast.success('नवीन प्रकरण जोडले');
-  };
+  /* ─── Insert text from InputMethodPicker ─────────────────────────── */
+  const handleInsertText = useCallback((text) => {
+    editorRef.current?.insertText(text);
+  }, []);
 
-  const removeChapter = async () => {
-    if (!confirmDelete) return;
-    const idx = chapters.findIndex((c) => c.id === confirmDelete.id);
-    await deleteChapter(confirmDelete.id);
-    const list = await listChapters(bookId);
-    if (list.length === 0) {
-      const fresh = await createChapter(bookId);
-      setChapters([fresh]);
-      setCurrentId(fresh.id);
-    } else {
-      setChapters(list);
-      setCurrentId(list[Math.min(idx, list.length - 1)].id);
+  /* ─── Insert image from camera / gallery ─────────────────────────── */
+  const fileInputRef = useRef(null);
+  const handleInsertImage = useCallback(() => fileInputRef.current?.click(), []);
+  const handleFileChange = useCallback((e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    editorRef.current?.insertImage(url, file.name);
+    e.target.value = '';
+    // Note: URL is managed by TipTap/Yjs — cleaned up when content is cleared
+  }, []);
+
+  /* ─── Font family change (persist) ──────────────────────────────── */
+  const handleFontChange = useCallback(async (f) => {
+    setFontFamily(f);
+    await saveSettings({ fontFamily: f });
+  }, []);
+
+  /* ─── AI actions ─────────────────────────────────────────────────── */
+  const runAI = useCallback(async (mode) => {
+    const text = editorRef.current?.getPlainText() ?? '';
+    if (!text && mode !== 'alternatives') {
+      toast.info(t('ai.chapterEmpty'));
+      return;
     }
-    setConfirmDelete(null);
-    toast.success('प्रकरण काढले');
-  };
+    if (mode === 'alternatives' && !selectionText) {
+      toast.info(t('ai.selectFirst'));
+      return;
+    }
+    setAiMode(mode);
+    setAiLoading(true);
+    setAiResult('');
+    setShowAI(true);
+    try {
+      let result = '';
+      if (mode === 'continue')          result = await suggestContinuation(text);
+      else if (mode === 'fix')          result = await fixGrammar(text);
+      else if (mode === 'alternatives') result = await suggestAlternatives(selectionText);
+      setAiResult(result);
+    } catch (err) {
+      toast.showError(err);
+      setShowAI(false);
+    } finally {
+      setAiLoading(false);
+    }
+  }, [selectionText, t, toast]);
 
-  const switchTo = async (id) => {
-    if (id === currentId) return;
-    await flushSave();
-    setCurrentId(id);
-    setShowChapterList(false);
-    setShowAI(false);
-  };
-
-  const idx = chapters.findIndex((c) => c.id === currentId);
-  const prevId = idx > 0 ? chapters[idx - 1].id : null;
-  const nextId = idx >= 0 && idx < chapters.length - 1 ? chapters[idx + 1].id : null;
-
-  const wordCount = useMemo(() => {
-    if (!content) return 0;
-    return content.trim().split(/\s+/).filter(Boolean).length;
-  }, [content]);
-
-  /* ---------- AI integration ---------- */
-  const aiAccept = (text) => {
-    setContent((prev) => prev + (prev.endsWith('\n') ? '' : '\n\n') + text);
-    setShowAI(false);
-    toast.success('जोडले');
-  };
-  const aiReplace = (text) => {
-    if (selection) {
-      setContent((prev) => prev.replace(selection, text));
+  const applyAI = useCallback(() => {
+    if (!aiResult) return;
+    if (aiMode === 'fix') {
+      editorRef.current?.getEditor()?.commands.setContent(aiResult);
+      toast.success(t('ai.replaced'));
     } else {
-      setContent(text);
+      editorRef.current?.insertText('\n\n' + aiResult);
+      toast.success(t('ai.added'));
     }
     setShowAI(false);
-    toast.success('बदलले');
-  };
+    setAiResult('');
+  }, [aiResult, aiMode, t, toast]);
 
-  if (!book || !currentId) {
+  /* ─── Loading state ─────────────────────────────────────────────── */
+  if (!book) {
     return (
-      <PageTransition>
-        <div className="flex items-center justify-center min-h-[50vh]">
-          <Loader2 className="animate-spin text-[var(--color-terracotta)]" size={32} />
-        </div>
-      </PageTransition>
+      <div className="flex items-center justify-center min-h-[100dvh]">
+        <div className="w-8 h-8 border-2 border-[var(--color-terracotta)] border-t-transparent rounded-full animate-spin" />
+      </div>
     );
   }
 
-  const currentChapter = chapters.find((c) => c.id === currentId);
+  const fontSize = FONT_SIZE_MAP[settings.fontSize || 'large'];
 
   return (
     <PageTransition>
-      <div className="max-w-2xl mx-auto px-3 pt-3 pb-4">
-        {/* Top bar */}
-        <div className="flex items-center justify-between mb-3 sticky top-0 z-30 bg-[var(--color-parchment)]/95 backdrop-blur-md py-2 -mx-3 px-3 border-b border-[rgba(201,151,58,0.3)]">
+      <div className="flex flex-col min-h-[100dvh] bg-[var(--theme-bg)]">
+
+        {/* Hidden file input for photo/gallery image insertion */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleFileChange}
+        />
+
+        {/* ══════════════════ TOP BAR ══════════════════ */}
+        <header
+          className="sticky top-0 z-40 flex items-center gap-2 px-3 py-2 bg-[var(--theme-toolbar-bg)] border-b border-[var(--theme-border)] shadow-sm"
+          style={{ paddingTop: 'calc(env(safe-area-inset-top) + 8px)' }}
+        >
           <button
             onClick={() => navigate('/')}
-            className="btn-icon rounded-[10px] text-[var(--color-ink)] hover:bg-[rgba(201,151,58,0.12)]"
-            aria-label="मुख्य पृष्ठ"
+            className="flex items-center justify-center w-10 h-10 rounded-[10px] text-[var(--theme-text)] hover:bg-[rgba(196,98,45,0.1)] flex-shrink-0"
+            aria-label={t('common.back')}
           >
-            <ArrowLeft size={22} />
+            <ChevronLeft size={22} />
+          </button>
+
+          <div className="flex-1 min-w-0">
+            <div className="text-xs text-[var(--theme-text-soft)] truncate leading-none mb-0.5">
+              {book.title}
+            </div>
+            <input
+              value={chapterTitle}
+              onChange={(e) => setChapterTitle(e.target.value)}
+              onBlur={saveTitle}
+              onKeyDown={(e) => e.key === 'Enter' && e.target.blur()}
+              placeholder={t('editor.chapterTitlePlaceholder')}
+              className="w-full text-sm font-semibold bg-transparent border-none outline-none text-[var(--theme-text)] placeholder:text-[var(--theme-text-soft)] placeholder:opacity-50"
+            />
+          </div>
+
+          <div className="flex-shrink-0 text-xs text-[var(--theme-text-soft)] hidden sm:block">
+            {t('editor.wordCount', { n: wordCount })}
+          </div>
+
+          <button
+            onClick={() => setShowChapters(true)}
+            className="flex items-center justify-center w-10 h-10 rounded-[10px] text-[var(--theme-text)] hover:bg-[rgba(196,98,45,0.1)] flex-shrink-0"
+            aria-label={t('editor.chapters')}
+          >
+            <ListIcon size={20} />
           </button>
 
           <button
-            onClick={() => setShowBookMeta(true)}
-            className="flex flex-col items-center min-w-0 max-w-[60%] hover:bg-[rgba(201,151,58,0.08)] rounded-[8px] px-3 py-1 transition-colors"
+            onClick={() => runAI('continue')}
+            className="flex items-center justify-center w-10 h-10 rounded-[10px] text-[var(--color-terracotta)] hover:bg-[rgba(196,98,45,0.1)] flex-shrink-0"
+            aria-label={t('ai.continue')}
           >
-            <div className="font-tiro text-[1.1rem] text-[var(--color-ink)] truncate w-full text-center leading-tight">
-              {book.title}
-            </div>
-            <div className="text-[11px] text-[var(--color-ink-soft)] mt-0.5">
-              प्रकरण {idx + 1} / {chapters.length}
-            </div>
+            <Sparkles size={20} />
           </button>
+        </header>
 
-          <SaveIndicator status={saveStatus} />
+        {/* ══════════════════ FORMATTING TOOLBAR ══════════════════ */}
+        <EditorToolbar
+          editor={editorRef.current?.getEditor?.()}
+          fontFamily={fontFamily}
+          onFontChange={handleFontChange}
+          onInsertImage={handleInsertImage}
+        />
+
+        {/* ══════════════════ WORD GOAL BAR ══════════════════ */}
+        <WordGoalBar
+          todayCount={todayCount}
+          goal={goal}
+          percent={percent}
+          met={met}
+          streak={streak}
+        />
+
+        {/* ══════════════════ CHAPTER NAV STRIP ══════════════════ */}
+        <div className="flex items-center justify-between px-4 py-1 bg-[var(--theme-bg)] border-b border-[var(--theme-border)]">
+          <button
+            onClick={() => goToChapter(chapterIdx - 1)}
+            disabled={chapterIdx === 0}
+            className="flex items-center gap-1 text-xs text-[var(--theme-text-soft)] disabled:opacity-30 py-1"
+          >
+            <ChevronLeft size={14} />
+            {t('editor.previous')}
+          </button>
+          <span className="text-xs text-[var(--theme-text-soft)]">
+            {t('editor.chapterCount', { current: chapterIdx + 1, total: chapters.length })}
+          </span>
+          <button
+            onClick={() => goToChapter(chapterIdx + 1)}
+            disabled={chapterIdx >= chapters.length - 1}
+            className="flex items-center gap-1 text-xs text-[var(--theme-text-soft)] disabled:opacity-30 py-1"
+          >
+            {t('editor.next')}
+            <ChevronRight size={14} />
+          </button>
         </div>
 
-        {/* Action shortcuts row */}
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar mb-3 -mx-3 px-3">
-          <ShortcutChip icon={BookOpen} label="प्रकरणे" onClick={() => setShowChapterList(true)} />
-          <ShortcutChip
-            icon={Sparkles}
-            label="AI सहाय्यक"
-            onClick={() => setShowAI((v) => !v)}
-            active={showAI}
-          />
-          <ShortcutChip
-            icon={ImageIcon}
-            label="चित्रे"
-            onClick={() => navigate(`/book/${bookId}/images`)}
-          />
-          <ShortcutChip
-            icon={Users}
-            label="पात्रे"
-            onClick={() => navigate(`/book/${bookId}/characters`)}
-          />
-          <ShortcutChip
-            icon={Library}
-            label="शब्दार्थ"
-            onClick={() => navigate(`/book/${bookId}/glossary`)}
-          />
-          <ShortcutChip
-            icon={FileDown}
-            label="निर्यात"
-            onClick={() => navigate(`/book/${bookId}/export`)}
-          />
-        </div>
-
-        {/* Chapter title */}
-        <div className="lekhak-card-paper p-4 mb-3">
-          <div className="flex items-center gap-2 text-[var(--color-terracotta)] text-xs font-semibold tracking-widest uppercase mb-1.5">
-            <CircleDot size={10} />
-            प्रकरण {idx + 1}
-          </div>
-          <input
-            value={titleEdit}
-            onChange={(e) => setTitleEdit(e.target.value)}
-            placeholder={`प्रकरणाचे नाव लिहा…`}
-            className="w-full bg-transparent border-0 outline-none font-tiro text-[1.65rem] leading-tight text-[var(--color-ink)] placeholder-[rgba(74,53,40,0.4)] p-0"
-          />
-          <TribalDivider variant="warli" className="mt-3 mb-0" />
-        </div>
-
-        {/* Main editor */}
-        <div className="lekhak-card-paper p-0 overflow-hidden mb-3">
-          <textarea
-            ref={editorRef}
-            value={content + (interim ? ' ' + interim : '')}
-            onChange={(e) => {
-              setContent(e.target.value);
-              setInterim('');
-            }}
-            onSelect={onSelect}
-            onMouseUp={onSelect}
-            onKeyUp={onSelect}
-            placeholder="येथून कथा सुरू करा. लिहिल्या लिहिल्या आपोआप जतन होईल — काळजी करू नका."
-            spellCheck={false}
-            className="lekhak-editor w-full min-h-[55vh] p-5 bg-transparent border-0 outline-none resize-none"
-            style={{ fontSize: FONT_SIZES[fontSize] || FONT_SIZES.large }}
-          />
-          <div className="flex items-center justify-between px-4 py-2 border-t border-[rgba(201,151,58,0.35)] bg-[rgba(245,237,214,0.5)]">
-            <div className="text-xs text-[var(--color-ink-soft)]">
-              {wordCount} शब्द
-            </div>
-            <div className="flex items-center gap-2">
-              <VoiceButton
-                onTranscript={appendVoice}
-                onInterim={(t) => setInterim(t)}
+        {/* ══════════════════ EDITOR AREA ══════════════════ */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-2xl mx-auto px-1 pb-6">
+            {currentChapter && (
+              <LekhakEditor
+                ref={editorRef}
+                ydoc={ydoc}
+                synced={synced}
+                fontFamily={fontFamily}
+                fontSize={fontSize}
+                onWordCount={handleWordCount}
+                onSelectionText={setSelectionText}
+                className="min-h-[60vh]"
               />
-            </div>
+            )}
           </div>
         </div>
 
-        {/* AI assist panel */}
+        {/* ══════════════════ BOTTOM INPUT AREA ══════════════════ */}
+        <div
+          className="sticky bottom-0 z-30 border-t border-[var(--theme-border)]"
+          style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+        >
+          {/* Voice interim ribbon */}
+          <VoiceRibbon interimText={voiceInterim} isListening={isListening} />
+
+          {/* Input method tabs + Roman input box */}
+          <InputMethodPicker
+            activeTab={inputTab}
+            onTabChange={setInputTab}
+            onInsertText={handleInsertText}
+            onVoiceInterim={(text) => { setVoiceInterim(text); setIsListening(true); }}
+            onVoiceStop={() => { setVoiceInterim(''); setIsListening(false); setInputTab('marathi'); }}
+            editorRef={editorRef}
+          />
+
+          {/* Quick action row */}
+          <div className="flex items-center gap-2 px-3 py-2 bg-[var(--theme-toolbar-bg)]">
+            <button
+              onClick={() => runAI('continue')}
+              className="flex items-center gap-1.5 px-3 h-8 rounded-[7px] text-xs font-medium text-[var(--color-terracotta)] border border-[rgba(196,98,45,0.35)] hover:bg-[rgba(196,98,45,0.08)]"
+            >
+              <Sparkles size={13} />
+              {t('ai.continue')}
+            </button>
+            <button
+              onClick={() => runAI('fix')}
+              className="flex items-center gap-1.5 px-3 h-8 rounded-[7px] text-xs font-medium text-[var(--theme-text)] border border-[var(--theme-border)] hover:bg-[rgba(196,98,45,0.08)]"
+            >
+              {t('ai.fix')}
+            </button>
+            {selectionText && (
+              <button
+                onClick={() => runAI('alternatives')}
+                className="flex items-center gap-1.5 px-3 h-8 rounded-[7px] text-xs font-medium text-[var(--theme-text)] border border-[var(--theme-border)] hover:bg-[rgba(196,98,45,0.08)]"
+              >
+                {t('ai.alternatives')}
+              </button>
+            )}
+            <button
+              onClick={handleInsertImage}
+              className="ml-auto flex items-center justify-center w-8 h-8 rounded-[7px] text-[var(--theme-text-soft)] hover:bg-[rgba(196,98,45,0.08)]"
+              title="Insert image"
+            >
+              <Camera size={16} />
+            </button>
+          </div>
+        </div>
+
+        {/* ══════════════════ CHAPTER DRAWER ══════════════════ */}
         <AnimatePresence>
-          {showAI && (
-            <div className="mb-3">
-              <AIAssistPanel
-                chapterText={content}
-                selection={selection}
-                onAccept={aiAccept}
-                onReplace={aiReplace}
-                onClose={() => setShowAI(false)}
+          {showChapters && (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="fixed inset-0 bg-black/40 z-50"
+                onClick={() => setShowChapters(false)}
               />
-            </div>
+              <motion.aside
+                initial={{ x: '100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '100%' }}
+                transition={{ type: 'spring', stiffness: 320, damping: 32 }}
+                className="fixed top-0 right-0 bottom-0 z-50 w-[min(320px,85vw)] bg-[var(--theme-bg-card)] border-l border-[var(--theme-border)] flex flex-col"
+                style={{ paddingTop: 'env(safe-area-inset-top)' }}
+              >
+                <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--theme-border)]">
+                  <div className="flex items-center gap-2">
+                    <BookOpen size={18} className="text-[var(--color-terracotta)]" />
+                    <span className="font-semibold text-[var(--theme-text)]">
+                      {t('editor.chapters')}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setShowChapters(false)}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg text-[var(--theme-text-soft)]"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto py-1">
+                  {chapters.map((ch, idx) => (
+                    <button
+                      key={ch.id}
+                      onClick={() => goToChapter(idx)}
+                      className={
+                        'w-full text-left px-4 py-3 flex items-center gap-3 transition-colors ' +
+                        (idx === chapterIdx
+                          ? 'bg-[rgba(196,98,45,0.12)] text-[var(--color-terracotta)]'
+                          : 'text-[var(--theme-text)] hover:bg-[rgba(196,98,45,0.06)]')
+                      }
+                    >
+                      <span className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-full bg-[rgba(196,98,45,0.1)] text-xs font-bold text-[var(--color-terracotta)]">
+                        {idx + 1}
+                      </span>
+                      <span className="flex-1 min-w-0 text-sm font-medium truncate">
+                        {ch.title}
+                      </span>
+                      {idx === chapterIdx && (
+                        <BookOpenCheck size={15} className="flex-shrink-0 opacity-60" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="px-4 py-3 border-t border-[var(--theme-border)] flex gap-2"
+                  style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)' }}>
+                  <button onClick={addChapter} className="flex-1 btn btn-primary h-11 text-sm gap-1.5">
+                    <Plus size={16} />
+                    {t('editor.addChapter')}
+                  </button>
+                  {chapters.length > 1 && (
+                    <button
+                      onClick={() => { setShowDeleteConfirm(true); setShowChapters(false); }}
+                      className="w-11 h-11 flex items-center justify-center rounded-[10px] text-[var(--color-rust)] border border-[rgba(160,66,26,0.35)] hover:bg-[rgba(160,66,26,0.08)]"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  )}
+                </div>
+              </motion.aside>
+            </>
           )}
         </AnimatePresence>
 
-        {/* Prev / next */}
-        <div className="flex items-center justify-between gap-2">
-          <button
-            disabled={!prevId}
-            onClick={() => switchTo(prevId)}
-            className="btn btn-ghost flex-1 disabled:opacity-40"
-          >
-            <ChevronLeft size={20} />
-            मागील
-          </button>
-          {nextId ? (
-            <button onClick={() => switchTo(nextId)} className="btn btn-ghost flex-1">
-              पुढील
-              <ChevronRight size={20} />
-            </button>
-          ) : (
-            <button onClick={addChapter} className="btn btn-secondary flex-1">
-              <Plus size={20} />
-              नवीन प्रकरण
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Chapter list drawer */}
-      <Modal
-        open={showChapterList}
-        onClose={() => setShowChapterList(false)}
-        title="प्रकरणे"
-        footer={
-          <button onClick={addChapter} className="btn btn-primary w-full">
-            <Plus size={20} />
-            नवीन प्रकरण जोडा
-          </button>
-        }
-      >
-        <ul className="space-y-2">
-          {chapters.map((c, i) => (
-            <li key={c.id}>
-              <button
-                onClick={() => switchTo(c.id)}
-                className={
-                  'w-full text-left p-3 rounded-[10px] flex items-center gap-3 transition-colors ' +
-                  (c.id === currentId
-                    ? 'bg-[var(--color-terracotta)] text-[var(--color-cream)]'
-                    : 'bg-[var(--color-cream)] hover:bg-[rgba(201,151,58,0.12)] border border-[var(--color-gold)]')
-                }
+        {/* ══════════════════ AI RESULT SHEET ══════════════════ */}
+        <AnimatePresence>
+          {showAI && (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="fixed inset-0 bg-black/30 z-50"
+                onClick={() => { setShowAI(false); setAiResult(''); }}
+              />
+              <motion.div
+                initial={{ y: '100%' }}
+                animate={{ y: 0 }}
+                exit={{ y: '100%' }}
+                transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                className="fixed bottom-0 left-0 right-0 z-50 bg-[var(--theme-bg-card)] rounded-t-[20px] border-t border-[var(--theme-border)]"
+                style={{ maxHeight: '72vh', paddingBottom: 'env(safe-area-inset-bottom)' }}
               >
-                <span
-                  className={
-                    'flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ' +
-                    (c.id === currentId
-                      ? 'bg-[var(--color-cream)] text-[var(--color-terracotta)]'
-                      : 'bg-[var(--color-parchment)] text-[var(--color-ink)] border border-[var(--color-gold)]')
-                  }
-                >
-                  {i + 1}
-                </span>
-                <span className="flex-1 truncate font-tiro text-[1.1rem]">
-                  {c.title || `प्रकरण ${i + 1}`}
-                </span>
-                {chapters.length > 1 && (
+                {/* Drag handle */}
+                <div className="flex justify-center pt-3 pb-1">
+                  <div className="w-10 h-1 rounded-full bg-[var(--theme-border)]" />
+                </div>
+
+                <div className="flex items-center justify-between px-4 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Sparkles size={18} className="text-[var(--color-terracotta)]" />
+                    <span className="font-semibold text-[var(--theme-text)]">
+                      {aiMode === 'continue' ? t('ai.continue')
+                        : aiMode === 'fix'   ? t('ai.fix')
+                        :                      t('ai.alternatives')}
+                    </span>
+                  </div>
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setConfirmDelete(c);
-                    }}
-                    className="btn-icon -mr-1 text-current opacity-70 hover:opacity-100"
-                    aria-label="प्रकरण काढा"
+                    onClick={() => { setShowAI(false); setAiResult(''); }}
+                    className="w-8 h-8 flex items-center justify-center rounded-lg text-[var(--theme-text-soft)]"
                   >
-                    <Trash2 size={16} />
+                    <X size={18} />
                   </button>
-                )}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </Modal>
+                </div>
 
-      {/* Book metadata edit */}
-      <Modal
-        open={showBookMeta}
-        onClose={() => setShowBookMeta(false)}
-        title="पुस्तकाची माहिती"
-        footer={
-          <button
-            onClick={async () => {
-              const updated = await updateBook(book.id, book);
-              setBook(updated);
-              setShowBookMeta(false);
-              toast.success('बदल जतन केले');
-            }}
-            className="btn btn-primary w-full"
-          >
-            जतन करा
-          </button>
-        }
-      >
-        <div className="space-y-4">
-          <label className="block">
-            <span className="block text-sm font-medium text-[var(--color-ink-soft)] mb-1.5">शीर्षक</span>
-            <input
-              className="input"
-              value={book.title}
-              onChange={(e) => setBook({ ...book, title: e.target.value })}
-            />
-          </label>
-          <label className="block">
-            <span className="block text-sm font-medium text-[var(--color-ink-soft)] mb-1.5">लेखक</span>
-            <input
-              className="input"
-              value={book.author || ''}
-              onChange={(e) => setBook({ ...book, author: e.target.value })}
-            />
-          </label>
-          <label className="block">
-            <span className="block text-sm font-medium text-[var(--color-ink-soft)] mb-1.5">समर्पण</span>
-            <textarea
-              rows={2}
-              className="textarea"
-              value={book.dedication || ''}
-              onChange={(e) => setBook({ ...book, dedication: e.target.value })}
-            />
-          </label>
-        </div>
-      </Modal>
+                <div className="px-4 pb-4 overflow-y-auto" style={{ maxHeight: '50vh' }}>
+                  {aiLoading ? (
+                    <div className="flex flex-col items-center gap-3 py-10">
+                      <div className="w-8 h-8 border-2 border-[var(--color-terracotta)] border-t-transparent rounded-full animate-spin" />
+                      <span className="text-sm text-[var(--theme-text-soft)]">
+                        {t('ai.thinking')}
+                      </span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="text-base leading-relaxed whitespace-pre-wrap text-[var(--theme-text)] mb-4 font-[var(--font-noto-serif)]">
+                        {aiResult}
+                      </div>
+                      {aiResult && (
+                        <div className="flex gap-2 sticky bottom-0 bg-[var(--theme-bg-card)] pt-2">
+                          <button onClick={applyAI} className="btn btn-primary flex-1 h-11">
+                            {aiMode === 'fix' ? t('ai.replace') : t('ai.add')}
+                          </button>
+                          <button
+                            onClick={() => runAI(aiMode)}
+                            className="btn btn-ghost h-11 px-5 text-lg"
+                          >
+                            ↻
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
 
-      {/* Confirm delete chapter */}
-      <Modal
-        open={!!confirmDelete}
-        onClose={() => setConfirmDelete(null)}
-        title="प्रकरण काढायचे?"
-        size="sm"
-        footer={
-          <div className="flex gap-2 justify-end">
-            <button onClick={() => setConfirmDelete(null)} className="btn btn-ghost">
-              नाही
+        {/* ══════════════════ DELETE CHAPTER MODAL ══════════════════ */}
+        <Modal
+          open={showDeleteConfirm}
+          onClose={() => setShowDeleteConfirm(false)}
+          title={t('editor.confirmDeleteChapter.title')}
+        >
+          <p className="text-[var(--theme-text)] mb-6">
+            {t('editor.confirmDeleteChapter.body', { title: currentChapter?.title ?? '' })}
+          </p>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowDeleteConfirm(false)}
+              className="btn btn-ghost flex-1"
+            >
+              {t('common.cancel')}
             </button>
             <button
               onClick={removeChapter}
-              className="btn"
-              style={{ background: 'var(--color-rust)', color: 'var(--color-cream)' }}
+              className="flex-1 h-11 rounded-[10px] bg-[var(--color-rust)] text-[var(--color-cream)] font-semibold hover:bg-[var(--color-terracotta-dark)]"
             >
-              होय
+              {t('common.delete')}
             </button>
           </div>
-        }
-      >
-        <p className="text-[var(--color-ink-soft)]">
-          “{confirmDelete?.title}” कायमचे काढून टाकले जाईल.
-        </p>
-      </Modal>
+        </Modal>
+
+      </div>
     </PageTransition>
-  );
-}
-
-function SaveIndicator({ status }) {
-  if (status === 'saving') {
-    return (
-      <div className="flex items-center gap-1.5 text-[var(--color-clay)] text-xs font-medium px-2">
-        <Loader2 size={14} className="animate-spin" />
-        जतन
-      </div>
-    );
-  }
-  if (status === 'saved') {
-    return (
-      <motion.div
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="flex items-center gap-1.5 text-[var(--color-forest)] text-xs font-medium px-2"
-      >
-        <CheckCircle2 size={14} />
-        जतन केले
-      </motion.div>
-    );
-  }
-  if (status === 'error') {
-    return (
-      <div className="text-[var(--color-rust)] text-xs font-medium px-2">
-        जतन झाले नाही
-      </div>
-    );
-  }
-  return (
-    <div className="flex items-center gap-1.5 text-[var(--color-ink-soft)] text-xs px-2 opacity-60">
-      <CircleDot size={10} />
-      सुरक्षित
-    </div>
-  );
-}
-
-function ShortcutChip({ icon: Icon, label, onClick, active }) {
-  return (
-    <button
-      onClick={onClick}
-      className={
-        'flex-shrink-0 inline-flex items-center gap-1.5 px-3.5 h-10 rounded-[10px] border text-sm font-medium transition-colors ' +
-        (active
-          ? 'bg-[var(--color-terracotta)] text-[var(--color-cream)] border-[var(--color-terracotta-dark)]'
-          : 'bg-[var(--color-cream)] text-[var(--color-ink)] border-[var(--color-gold)] hover:bg-[rgba(201,151,58,0.12)]')
-      }
-    >
-      <Icon size={16} />
-      {label}
-    </button>
   );
 }
