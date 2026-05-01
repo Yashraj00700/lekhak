@@ -36,29 +36,26 @@ export default function InputMethodPicker({
   const [romanBuffer, setRomanBuffer] = useState('');
   const [isListening, setIsListening] = useState(false);
   const recognizerRef = useRef(null);
+  const isListeningRef = useRef(false);   // ← ref-based flag so onend closure stays fresh
   const interimRef = useRef('');
 
   /* ─── Roman → Devanagari transliteration ─── */
   const handleRomanInput = useCallback(
     async (e) => {
-      const raw = e.target.value;
-      setRomanBuffer(raw);
-
+      const raw = e.target.value.trim();
       if (!raw) return;
 
       try {
         const sc = await getSanscript();
-        // HK → Devanagari is the most natural Roman-Marathi mapping
-        const devanagari = sc.t(raw, 'hk', 'devanagari');
-        onInsertText?.(devanagari);
-        setRomanBuffer('');
-        e.target.value = '';
+        // ITRANS → Devanagari: intuitive for Marathi (a→अ, aa→आ, k→क, kh→ख …)
+        const devanagari = sc.t(raw, 'itrans', 'devanagari');
+        onInsertText?.(devanagari + ' ');
       } catch {
         // Fallback: insert as-is
-        onInsertText?.(raw);
-        setRomanBuffer('');
-        e.target.value = '';
+        onInsertText?.(raw + ' ');
       }
+      setRomanBuffer('');
+      e.target.value = '';
     },
     [onInsertText]
   );
@@ -109,25 +106,33 @@ export default function InputMethodPicker({
       if (e.error === 'not-allowed') {
         alert(t('voice.permissionDenied'));
       }
+      isListeningRef.current = false;
       setIsListening(false);
     };
 
     rec.onend = () => {
-      // Auto-restart if still supposed to be listening
-      if (recognizerRef.current === rec && isListening) {
-        try { rec.start(); } catch { setIsListening(false); }
+      // Use ref (not state) to avoid stale closure — isListeningRef.current
+      // is always current even inside this long-lived callback
+      if (recognizerRef.current === rec && isListeningRef.current) {
+        try { rec.start(); } catch {
+          isListeningRef.current = false;
+          setIsListening(false);
+        }
       } else {
+        isListeningRef.current = false;
         setIsListening(false);
         onVoiceStop?.();
       }
     };
 
     recognizerRef.current = rec;
+    isListeningRef.current = true;
     rec.start();
     setIsListening(true);
-  }, [t, onInsertText, onVoiceInterim, onVoiceStop, isListening]);
+  }, [t, onInsertText, onVoiceInterim, onVoiceStop]);   // ← removed isListening dep
 
   const stopListening = useCallback(() => {
+    isListeningRef.current = false;
     if (recognizerRef.current) {
       recognizerRef.current.onend = null;
       recognizerRef.current.stop();
@@ -171,6 +176,12 @@ export default function InputMethodPicker({
     // Stop voice if switching away
     if (isListening) stopListening();
     onTabChange?.(tab);
+
+    // Focus the TipTap editor when switching to native मराठी keyboard tab
+    // so the user can start typing immediately without a second tap
+    if (tab === 'marathi') {
+      setTimeout(() => editorRef?.current?.focus(), 80);
+    }
   };
 
   return (
@@ -215,6 +226,7 @@ export default function InputMethodPicker({
             className="input text-sm py-2"
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault(); // prevent the space/enter being inserted AFTER clear
                 handleRomanInput(e);
               }
             }}

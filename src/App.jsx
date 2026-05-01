@@ -71,7 +71,7 @@ export default function App() {
         }}
       >
         <Suspense fallback={<Loading />}>
-          <AnimatePresence mode="wait">
+          <AnimatePresence mode="sync" initial={false}>
             <Routes location={location} key={location.pathname}>
               <Route path="/"                           element={<Home />} />
               <Route path="/book/:bookId"               element={<BookEditor />} />

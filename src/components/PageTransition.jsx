@@ -1,9 +1,9 @@
 import { motion } from 'framer-motion';
 
 const variants = {
-  initial: { opacity: 0, y: 8 },
-  enter: { opacity: 1, y: 0 },
-  exit: { opacity: 0, y: -4 },
+  initial: { opacity: 0 },
+  enter:   { opacity: 1 },
+  exit:    { opacity: 0 },
 };
 
 export default function PageTransition({ children, className = '' }) {
@@ -13,7 +13,7 @@ export default function PageTransition({ children, className = '' }) {
       animate="enter"
       exit="exit"
       variants={variants}
-      transition={{ duration: 0.24, ease: [0.32, 0.72, 0.32, 1] }}
+      transition={{ duration: 0.12, ease: 'easeOut' }}
       className={className}
     >
       {children}

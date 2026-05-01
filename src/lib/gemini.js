@@ -13,9 +13,9 @@ import { translate } from './i18n.js';
  *   2. .env VITE_GEMINI_API_KEY
  */
 
-const TEXT_MODEL = 'gemini-3-pro';
-const IMAGE_PRO = 'gemini-3-pro-image-preview';
-const IMAGE_FLASH = 'gemini-3.1-flash-image-preview';
+const TEXT_MODEL  = 'gemini-2.0-flash';
+const IMAGE_PRO   = 'gemini-2.0-flash-exp-image-generation';
+const IMAGE_FLASH = 'gemini-2.0-flash-exp-image-generation';
 
 let cachedClient = null;
 let cachedKey = null;

@@ -147,9 +147,13 @@ export default function Home() {
                 transition={{ duration: 0.25, delay: i * 0.04 }}
                 className="lekhak-card-paper p-0 overflow-hidden"
               >
-                <button
+                {/* Use div (not button) to avoid invalid nested-button HTML */}
+                <div
                   onClick={() => navigate(`/book/${b.id}`)}
-                  className="w-full text-left p-4 flex items-stretch gap-4 hover:bg-[rgba(201,151,58,0.06)] transition-colors"
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => e.key === 'Enter' && navigate(`/book/${b.id}`)}
+                  className="w-full text-left p-4 flex items-stretch gap-4 hover:bg-[rgba(201,151,58,0.06)] transition-colors cursor-pointer"
                 >
                   {/* Cover thumbnail */}
                   <div className="w-16 h-20 flex-shrink-0 rounded-[8px] overflow-hidden border border-[var(--theme-border)] bg-[var(--theme-bg)] flex items-center justify-center">
@@ -186,7 +190,7 @@ export default function Home() {
                       <Trash2 size={18} />
                     </button>
                   </div>
-                </button>
+                </div>
               </motion.li>
             ))}
           </ul>
