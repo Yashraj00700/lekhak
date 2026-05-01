@@ -16,7 +16,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronLeft, ChevronRight, List as ListIcon, Sparkles,
-  BookOpen, Plus, Trash2, X, BookOpenCheck, Camera,
+  BookOpen, Plus, Trash2, X, BookOpenCheck, Camera, Eraser,
 } from 'lucide-react';
 import PageTransition from '../components/PageTransition.jsx';
 import LekhakEditor from '../components/editor/LekhakEditor.jsx';
@@ -46,7 +46,7 @@ const FONT_SIZE_MAP = {
 export default function BookEditor() {
   const { bookId } = useParams();
   const navigate   = useNavigate();
-  const { t }      = useLanguage();
+  const { t, isMarathi } = useLanguage();
   const toast      = useToast();
   const editorRef  = useRef(null);
 
@@ -61,6 +61,7 @@ export default function BookEditor() {
   const [showChapters, setShowChapters]         = useState(false);
   const [showAI, setShowAI]                     = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showClearConfirm, setShowClearConfirm]   = useState(false);
   const [inputTab, setInputTab]                 = useState('marathi');
   const [voiceInterim, setVoiceInterim]         = useState('');
   const [isListening, setIsListening]           = useState(false);
@@ -151,6 +152,14 @@ export default function BookEditor() {
     setShowChapters(false);
     toast.success(t('editor.chapterAdded'));
   }, [bookId, chapters, t, toast]);
+
+  /* ─── Clear this chapter's content ─────────────────────────────── */
+  const clearChapter = useCallback(() => {
+    tiptapEditor?.commands.clearContent(true);   // true = emit update
+    setShowClearConfirm(false);
+    setShowChapters(false);
+    toast.success(isMarathi ? 'प्रकरण साफ केले' : 'Chapter cleared');
+  }, [tiptapEditor, toast, isMarathi]);
 
   const removeChapter = useCallback(async () => {
     if (!currentChapter || chapters.length <= 1) return;
@@ -472,6 +481,14 @@ export default function BookEditor() {
                     <Plus size={16} />
                     {t('editor.addChapter')}
                   </button>
+                  {/* Clear chapter content */}
+                  <button
+                    onClick={() => { setShowClearConfirm(true); setShowChapters(false); }}
+                    className="w-11 h-11 flex items-center justify-center rounded-[10px] text-[var(--theme-text-soft)] border border-[var(--theme-border)] hover:bg-[rgba(196,98,45,0.08)]"
+                    title={isMarathi ? 'प्रकरण साफ करा' : 'Clear chapter content'}
+                  >
+                    <Eraser size={16} />
+                  </button>
                   {chapters.length > 1 && (
                     <button
                       onClick={() => { setShowDeleteConfirm(true); setShowChapters(false); }}
@@ -558,6 +575,30 @@ export default function BookEditor() {
             </>
           )}
         </AnimatePresence>
+
+        {/* ══════════════════ CLEAR CHAPTER MODAL ══════════════════ */}
+        <Modal
+          open={showClearConfirm}
+          onClose={() => setShowClearConfirm(false)}
+          title={isMarathi ? 'प्रकरण साफ करायचे?' : 'Clear chapter content?'}
+        >
+          <p className="text-[var(--theme-text)] mb-6">
+            {isMarathi
+              ? 'या प्रकरणातील सर्व मजकूर कायमचा काढून टाकला जाईल.'
+              : 'All text in this chapter will be permanently erased.'}
+          </p>
+          <div className="flex gap-3">
+            <button onClick={() => setShowClearConfirm(false)} className="btn btn-ghost flex-1">
+              {t('common.cancel')}
+            </button>
+            <button
+              onClick={clearChapter}
+              className="flex-1 h-11 rounded-[10px] bg-[var(--color-terracotta)] text-[var(--color-cream)] font-semibold hover:opacity-90"
+            >
+              {isMarathi ? 'साफ करा' : 'Clear'}
+            </button>
+          </div>
+        </Modal>
 
         {/* ══════════════════ DELETE CHAPTER MODAL ══════════════════ */}
         <Modal

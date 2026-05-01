@@ -14,8 +14,10 @@ import { translate } from './i18n.js';
  */
 
 const TEXT_MODEL  = 'gemini-2.0-flash';
-const IMAGE_PRO   = 'gemini-2.0-flash-exp-image-generation';
-const IMAGE_FLASH = 'gemini-2.0-flash-exp-image-generation';
+// Imagen 4 via ai.models.generateImages — high quality, no responseModalities needed
+const IMAGE_PRO   = 'imagen-4.0-generate-001';
+// Flash path also uses Imagen 3 (cheaper/faster but still high quality)
+const IMAGE_FLASH = 'imagen-3.0-generate-002';
 
 let cachedClient = null;
 let cachedKey = null;
@@ -202,7 +204,8 @@ async function blobFromBase64(b64, mime = 'image/png') {
 
 /**
  * Generate a brand-new image from a text prompt + style.
- * model: 'pro' (quality) | 'flash' (speed)
+ * Uses ai.models.generateImages (Imagen 4/3) — correct API for @google/genai v1.51+
+ * model: 'pro' (Imagen 4, quality) | 'flash' (Imagen 3, speed)
  */
 export async function generateImage({ prompt, style = 'realistic', model = 'pro' }) {
   try {
@@ -210,29 +213,37 @@ export async function generateImage({ prompt, style = 'realistic', model = 'pro'
     const modelId = model === 'flash' ? IMAGE_FLASH : IMAGE_PRO;
     const fullPrompt = buildImagePrompt(prompt, style);
 
-    const response = await ai.models.generateContent({
+    const response = await ai.models.generateImages({
       model: modelId,
-      contents: fullPrompt,
+      prompt: fullPrompt,
+      config: { numberOfImages: 1 },
     });
 
-    const img = extractInlineImage(response);
-    if (!img) throw new Error('No image returned by model');
-    const blob = await blobFromBase64(img.base64, img.mime);
-    return { blob, mime: img.mime, prompt: fullPrompt, model: modelId, style };
+    const imgData = response?.generatedImages?.[0]?.image?.imageBytes;
+    if (!imgData) throw new Error('No image returned by model');
+
+    // imageBytes can be a base64 string or Uint8Array — handle both
+    const b64 = typeof imgData === 'string'
+      ? imgData
+      : btoa(String.fromCharCode(...new Uint8Array(imgData)));
+    const mime = 'image/png';
+    const blob = await blobFromBase64(b64, mime);
+    return { blob, mime, prompt: fullPrompt, model: modelId, style };
   } catch (err) {
     throw wrapError(err, 'errors.imageFailed');
   }
 }
 
 /**
- * Multi-turn image edit: feed previous image bytes + new instruction back to the same model.
+ * Edit an existing image by re-generating with Gemini 2.0 Flash (which supports
+ * multi-modal input + image output via responseModalities).
  */
 export async function editImage({ baseImageBlob, baseMime = 'image/png', instruction, model = 'pro' }) {
   try {
     const ai = await getClient();
-    const modelId = model === 'flash' ? IMAGE_FLASH : IMAGE_PRO;
+    // Edit uses Gemini 2.0 Flash (supports image input + image output)
+    const modelId = 'gemini-2.0-flash-exp-image-generation';
 
-    // Convert blob to base64 (data URL)
     const base64 = await new Promise((resolve, reject) => {
       const r = new FileReader();
       r.onload = () => resolve(String(r.result).split(',')[1] || '');
@@ -251,6 +262,9 @@ export async function editImage({ baseImageBlob, baseMime = 'image/png', instruc
           ],
         },
       ],
+      config: {
+        responseModalities: ['IMAGE', 'TEXT'],
+      },
     });
 
     const img = extractInlineImage(response);

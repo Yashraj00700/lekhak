@@ -3,6 +3,7 @@ import { Routes, Route, useLocation } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import BottomNav from './components/BottomNav.jsx';
 import UpdateBanner from './components/UpdateBanner.jsx';
+import ErrorBoundary from './components/ErrorBoundary.jsx';
 import { getSettings } from './lib/db.js';
 
 const Home         = lazy(() => import('./routes/Home.jsx'));
@@ -70,6 +71,7 @@ export default function App() {
           paddingTop: 'env(safe-area-inset-top)',
         }}
       >
+        <ErrorBoundary>
         <Suspense fallback={<Loading />}>
           <AnimatePresence mode="sync" initial={false}>
             <Routes location={location} key={location.pathname}>
@@ -87,6 +89,7 @@ export default function App() {
             </Routes>
           </AnimatePresence>
         </Suspense>
+        </ErrorBoundary>
       </main>
 
       {!hideNav && <BottomNav />}
