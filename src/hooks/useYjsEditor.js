@@ -6,78 +6,46 @@
  * Returns the ydoc + provider so TipTap can bind via Collaboration extension.
  */
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import * as Y from 'yjs';
 import { IndexeddbPersistence } from 'y-indexeddb';
 
 export function useYjsEditor(chapterId) {
-  const ydocRef = useRef(null);
-  const providerRef = useRef(null);
+  // Use state (not ref) so callers re-render when the ydoc becomes available
+  const [ydoc, setYdoc]     = useState(null);
   const [synced, setSynced] = useState(false);
 
   useEffect(() => {
-    if (!chapterId) return;
+    if (!chapterId) {
+      setYdoc(null);
+      setSynced(false);
+      return;
+    }
 
-    // Create a new Y.Doc for this chapter
-    const ydoc = new Y.Doc();
-    ydocRef.current = ydoc;
+    const doc      = new Y.Doc();
+    const dbName   = `lekhak-chapter-${chapterId}`;
+    const provider = new IndexeddbPersistence(dbName, doc);
 
-    // Persist to IndexedDB automatically
-    const dbName = `lekhak-chapter-${chapterId}`;
-    const provider = new IndexeddbPersistence(dbName, ydoc);
-    providerRef.current = provider;
-
+    // Fire once when IndexedDB content is loaded into the doc
     provider.on('synced', () => {
+      setYdoc(doc);   // set AFTER sync so editor receives populated doc
       setSynced(true);
     });
 
+    // Safety: if synced never fires (empty doc), resolve after 400 ms
+    const fallback = setTimeout(() => {
+      setYdoc(doc);
+      setSynced(true);
+    }, 400);
+
     return () => {
+      clearTimeout(fallback);
       provider.destroy();
-      ydoc.destroy();
-      ydocRef.current = null;
-      providerRef.current = null;
+      doc.destroy();
+      setYdoc(null);
       setSynced(false);
     };
   }, [chapterId]);
 
-  /**
-   * Get current plain text from the Yjs doc (for word count, AI context, etc.)
-   */
-  const getPlainText = useCallback(() => {
-    const ydoc = ydocRef.current;
-    if (!ydoc) return '';
-    const fragment = ydoc.getXmlFragment('default');
-    // Walk XML fragment and collect text nodes
-    const texts = [];
-    const walk = (node) => {
-      if (node.toString) {
-        const str = node.toString();
-        if (str) texts.push(str);
-      }
-      if (node._content) {
-        for (const child of node._content) walk(child);
-      }
-    };
-    // Simpler: just get text from the doc XML serialisation
-    const xml = fragment.toJSON ? fragment.toJSON() : '';
-    return xml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-  }, []);
-
-  /**
-   * Count words in plain text
-   */
-  const getWordCount = useCallback(() => {
-    const text = getPlainText();
-    if (!text) return 0;
-    return text.split(/\s+/).filter(Boolean).length;
-  }, [getPlainText]);
-
-  return {
-    ydoc: ydocRef.current,
-    provider: providerRef.current,
-    synced,
-    getPlainText,
-    getWordCount,
-    ydocRef,
-  };
+  return { ydoc, synced };
 }

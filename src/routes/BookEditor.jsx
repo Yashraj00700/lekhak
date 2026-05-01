@@ -11,7 +11,7 @@
  *  - AI Assist panel slides up from bottom
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -67,6 +67,11 @@ export default function BookEditor() {
   const [wordCount, setWordCount]               = useState(0);
   const [selectionText, setSelectionText]       = useState('');
   const [fontFamily, setFontFamily]             = useState("'Tiro Devanagari Marathi', serif");
+
+  /* ─── TipTap editor instance (state-driven, not ref-pulled) ─────── */
+  const [tiptapEditor, setTiptapEditor] = useState(null);
+  // Stable callback — won't cause LekhakEditor to re-render on every BookEditor render
+  const handleEditorReady = useCallback((ed) => setTiptapEditor(ed), []);
 
   /* ─── AI state ─────────────────────────────────────────────────── */
   const [aiLoading, setAiLoading] = useState(false);
@@ -182,7 +187,7 @@ export default function BookEditor() {
 
   /* ─── AI actions ─────────────────────────────────────────────────── */
   const runAI = useCallback(async (mode) => {
-    const text = editorRef.current?.getPlainText() ?? '';
+    const text = tiptapEditor?.getText() ?? editorRef.current?.getPlainText() ?? '';
     if (!text && mode !== 'alternatives') {
       toast.info(t('ai.chapterEmpty'));
       return;
@@ -212,15 +217,15 @@ export default function BookEditor() {
   const applyAI = useCallback(() => {
     if (!aiResult) return;
     if (aiMode === 'fix') {
-      editorRef.current?.getEditor()?.commands.setContent(aiResult);
+      tiptapEditor?.commands.setContent(aiResult);
       toast.success(t('ai.replaced'));
     } else {
-      editorRef.current?.insertText('\n\n' + aiResult);
+      tiptapEditor?.chain().focus().insertContent('\n\n' + aiResult).run();
       toast.success(t('ai.added'));
     }
     setShowAI(false);
     setAiResult('');
-  }, [aiResult, aiMode, t, toast]);
+  }, [aiResult, aiMode, t, toast, tiptapEditor]);
 
   /* ─── Loading state ─────────────────────────────────────────────── */
   if (!book) {
@@ -296,7 +301,7 @@ export default function BookEditor() {
 
         {/* ══════════════════ FORMATTING TOOLBAR ══════════════════ */}
         <EditorToolbar
-          editor={editorRef.current?.getEditor?.()}
+          editor={tiptapEditor}
           fontFamily={fontFamily}
           onFontChange={handleFontChange}
           onInsertImage={handleInsertImage}
@@ -346,6 +351,7 @@ export default function BookEditor() {
                 fontSize={fontSize}
                 onWordCount={handleWordCount}
                 onSelectionText={setSelectionText}
+                onEditorReady={handleEditorReady}
                 className="min-h-[60vh]"
               />
             )}

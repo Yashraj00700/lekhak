@@ -1,14 +1,10 @@
 /**
  * LekhakEditor — TipTap rich-text editor with Yjs CRDT autosave.
  *
- * Features:
- * - Full Marathi/Devanagari text support
- * - Inline image blocks with drag & drop
- * - Heading, bold, italic, underline, blockquote, lists
- * - Character count via TipTap extension
- * - Yjs collaboration provider for bulletproof autosave
- * - Placeholder text in Marathi / English
- * - Custom font family support
+ * Key design decision:
+ *  `onEditorReady(editorInstance)` is called whenever the TipTap editor
+ *  is created/replaced. The parent (BookEditor) stores this in useState so
+ *  EditorToolbar always gets a valid, stable reference — no ref-pull race.
  */
 
 import { useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
@@ -31,46 +27,37 @@ const LekhakEditor = forwardRef(function LekhakEditor(
     fontSize,
     onWordCount,
     onSelectionText,
+    onEditorReady,   // ← called with the TipTap editor instance when ready
     className = '',
     readOnly = false,
   },
   ref
 ) {
   const { t } = useLanguage();
-  const editorRef = useRef(null);
 
   const editor = useEditor(
     {
       extensions: [
         StarterKit.configure({
-          // Disable history — Yjs handles undo/redo
-          history: false,
+          // Collaboration handles undo/redo history
+          history: ydoc ? false : undefined,
         }),
         Placeholder.configure({
           placeholder: t('editor.bodyPlaceholder'),
           emptyEditorClass: 'is-editor-empty',
         }),
-        TextAlign.configure({
-          types: ['heading', 'paragraph'],
-        }),
+        TextAlign.configure({ types: ['heading', 'paragraph'] }),
         Underline,
         TextStyle,
         CharacterCount,
         ImageExtension.configure({
           inline: false,
           allowBase64: true,
-          HTMLAttributes: {
-            class: 'lekhak-image',
-          },
+          HTMLAttributes: { class: 'lekhak-image' },
         }),
-        // Yjs collaboration — binds the editor to the Y.XmlFragment
+        // Only include Collaboration when ydoc is available
         ...(ydoc
-          ? [
-              Collaboration.configure({
-                document: ydoc,
-                field: 'default',
-              }),
-            ]
+          ? [Collaboration.configure({ document: ydoc, field: 'default' })]
           : []),
       ],
       editable: !readOnly,
@@ -78,75 +65,63 @@ const LekhakEditor = forwardRef(function LekhakEditor(
       editorProps: {
         attributes: {
           class: 'lekhak-editor ProseMirror',
-          spellcheck: 'false', // we handle spellcheck ourselves
+          spellcheck: 'false',
           lang: 'mr',
         },
       },
-      onUpdate({ editor }) {
+      onUpdate({ editor: ed }) {
         if (onWordCount) {
-          const words = editor.storage.characterCount?.words?.() ?? 0;
+          const words = ed.storage.characterCount?.words?.() ?? 0;
           onWordCount(words);
         }
       },
-      onSelectionUpdate({ editor }) {
+      onSelectionUpdate({ editor: ed }) {
         if (onSelectionText) {
-          const { from, to } = editor.state.selection;
-          const text = from === to ? '' : editor.state.doc.textBetween(from, to, ' ');
+          const { from, to } = ed.state.selection;
+          const text = from === to ? '' : ed.state.doc.textBetween(from, to, ' ');
           onSelectionText(text);
         }
       },
     },
-    // Re-create editor when ydoc changes (new chapter)
+    // Recreate editor when ydoc changes (new chapter loaded or ydoc becomes available)
     [ydoc]
   );
 
-  editorRef.current = editor;
-
-  // Expose editor instance to parent via ref
-  useImperativeHandle(ref, () => ({
-    getEditor: () => editorRef.current,
-    insertText: (text) => {
-      const ed = editorRef.current;
-      if (!ed) return;
-      ed.chain().focus().insertContent(text).run();
-    },
-    insertImage: (src, alt = '') => {
-      const ed = editorRef.current;
-      if (!ed) return;
-      ed.chain().focus().setImage({ src, alt }).run();
-    },
-    getPlainText: () => {
-      const ed = editorRef.current;
-      if (!ed) return '';
-      return ed.getText();
-    },
-    getWordCount: () => {
-      const ed = editorRef.current;
-      if (!ed) return 0;
-      return ed.storage.characterCount?.words?.() ?? 0;
-    },
-    focus: () => editorRef.current?.commands.focus('end'),
-  }));
-
-  // Apply font family CSS to the editor element
+  // Notify parent when editor is ready
   useEffect(() => {
-    if (!editor) return;
-    const el = editor.view?.dom;
-    if (el && fontFamily) {
-      el.style.fontFamily = fontFamily;
+    if (editor && onEditorReady) {
+      onEditorReady(editor);
     }
+    return () => {
+      // Editor is being destroyed — clear the parent reference
+      if (onEditorReady) onEditorReady(null);
+    };
+  }, [editor, onEditorReady]);
+
+  // Expose imperative API via ref
+  useImperativeHandle(ref, () => ({
+    getEditor:   () => editor,
+    insertText:  (text) => editor?.chain().focus().insertContent(text).run(),
+    insertImage: (src, alt = '') => editor?.chain().focus().setImage({ src, alt }).run(),
+    getPlainText: () => editor?.getText() ?? '',
+    getWordCount: () => editor?.storage.characterCount?.words?.() ?? 0,
+    focus:       () => editor?.commands.focus('end'),
+  }), [editor]);
+
+  // Apply font family to the editor DOM node
+  useEffect(() => {
+    const el = editor?.view?.dom;
+    if (el && fontFamily) el.style.fontFamily = fontFamily;
   }, [editor, fontFamily]);
 
-  // Apply font size
+  // Apply font size to the editor DOM node
   useEffect(() => {
-    if (!editor) return;
-    const el = editor.view?.dom;
-    if (el && fontSize) {
-      el.style.fontSize = fontSize;
-    }
+    const el = editor?.view?.dom;
+    if (el && fontSize) el.style.fontSize = fontSize;
   }, [editor, fontSize]);
 
-  if (!synced && ydoc) {
+  // Show spinner while Yjs is syncing (only when a ydoc is expected)
+  if (!synced) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] text-[var(--theme-text-soft)]">
         <div className="text-center">

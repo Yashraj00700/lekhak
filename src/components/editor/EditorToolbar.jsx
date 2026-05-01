@@ -45,15 +45,20 @@ const FONT_OPTIONS = [
 ];
 
 export default function EditorToolbar({ editor, fontFamily, onFontChange, onInsertImage }) {
-  if (!editor) return null;
+  // Guard: editor may be null while TipTap initialises or recreates
+  if (!editor || !editor.state) return null;
+
+  // Safe wrappers — editor.can() throws if called mid-recreation
+  const canUndo = (() => { try { return editor.can().undo(); } catch { return false; } })();
+  const canRedo = (() => { try { return editor.can().redo(); } catch { return false; } })();
 
   return (
     <div className="editor-toolbar flex items-center gap-0.5 px-2 py-1.5 overflow-x-auto no-scrollbar flex-wrap">
       {/* Undo / Redo */}
-      <ToolBtn onClick={() => editor.chain().focus().undo().run()} title="Undo" disabled={!editor.can().undo()}>
+      <ToolBtn onClick={() => editor.chain().focus().undo().run()} title="Undo" disabled={!canUndo}>
         <Undo2 size={16} />
       </ToolBtn>
-      <ToolBtn onClick={() => editor.chain().focus().redo().run()} title="Redo" disabled={!editor.can().redo()}>
+      <ToolBtn onClick={() => editor.chain().focus().redo().run()} title="Redo" disabled={!canRedo}>
         <Redo2 size={16} />
       </ToolBtn>
 
